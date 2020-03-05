@@ -1,5 +1,10 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Write;
+use std::io;
+use std::io::BufWriter;
+use std::str;
+use std::ops::Try;
 
 pub enum Command {
     Connect,
@@ -91,6 +96,18 @@ impl Header {
 
     pub fn remove(&mut self, key: &str) -> () {
         self.map.remove(encode_str(key).as_str());
+    }
+
+    pub fn write_to<T: Write>(&self, w: T) -> io::Result<usize> {
+        let mut bw = BufWriter::new(w);
+        let mut bytes_written = 0;
+        ​
+        for (k, v) in self.map.iter() {
+            let field_str = format!("{}: {}", k, v.join(","));
+            let size = bw.write(field_str.as_bytes())?;
+            bytes_written += size;
+        }
+        bw.flush().and(Ok(bytes_written))
     }
 }
 
