@@ -4,7 +4,7 @@ use std::io;
 use std::io::BufWriter;
 use std::str;
 use std::string;
-use std::convert::TryInto;
+use std::fmt;
 
 pub enum Command {
     Connect,
@@ -24,11 +24,11 @@ pub enum Command {
     Error,
 }
 
-impl string::ToString for Command {
-    fn to_string(&self) -> string::String {
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Command::*;
 
-        match self {
+        let value = match self {
             Connect => "CONNECT",
             Stomp => "STOMP",
             Connected => "CONNECTED",
@@ -44,7 +44,9 @@ impl string::ToString for Command {
             Message => "MESSAGE",
             Receipt => "RECEIPT",
             Error => "ERROR",
-        }.to_string()
+        };
+
+        write!(f, "{}", value)
     }
 }
 
