@@ -65,18 +65,18 @@ fn encode(input: &str) -> String {
 
 #[derive(Default)]
 pub struct Header {
-    map: BTreeMap<String, Vec<String>>,
+    fields: BTreeMap<String, Vec<String>>,
 }
 
 impl Header {
     pub fn new() -> Self {
         Header {
-            map: BTreeMap::new(),
+            fields: BTreeMap::new(),
         }
     }
 
     pub fn add(&mut self, key: &str, value: &str) {
-        self.map
+        self.fields
             .entry(key.to_string())
             .or_insert_with(|| Vec::with_capacity(1))
             .push(value.to_string());
@@ -89,19 +89,19 @@ impl Header {
             c.push(v.to_string());
         }
 
-        self.map
+        self.fields
             .insert(key.to_string(), c);
     }
 
     pub fn remove(&mut self, key: &str) {
-        self.map.remove(key);
+        self.fields.remove(key);
     }
 
     pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<u64> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written: u64 = 0;
 
-        for (k, v) in self.map.iter() {
+        for (k, v) in self.fields.iter() {
             let field_str = format!("{}: {}\n", encode(k), encode(&v.join(",")));
             let size = bw.write(field_str.as_bytes())?;
             bytes_written += size as u64;
