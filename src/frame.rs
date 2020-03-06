@@ -1,9 +1,9 @@
-use std::collections::{HashMap, BTreeMap};
-use std::fmt;
-use std::io::Write;
+use std::collections::BTreeMap;
+use std::io::{Write, Read};
 use std::io;
 use std::io::BufWriter;
 use std::str;
+use std::string;
 
 pub enum Command {
     Connect,
@@ -23,11 +23,11 @@ pub enum Command {
     Error,
 }
 
-impl fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl string::ToString for Command {
+    fn to_string(&self) -> string::String {
         use self::Command::*;
 
-        let v = match self {
+        match self {
             Connect => "CONNECT",
             Stomp => "STOMP",
             Connected => "CONNECTED",
@@ -43,9 +43,7 @@ impl fmt::Display for Command {
             Message => "MESSAGE",
             Receipt => "RECEIPT",
             Error => "ERROR",
-        };
-
-        write!(f, "{}", v)
+        }.to_string()
     }
 }
 
@@ -70,7 +68,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn new() -> Header {
+    pub fn new() -> Self {
         Header {
             map: BTreeMap::new(),
         }
@@ -98,7 +96,7 @@ impl Header {
         self.map.remove(key);
     }
 
-    pub fn write_to<T: Write>(&self, w: &mut T) -> io::Result<usize> {
+    pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<usize> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written = 0;
 
@@ -109,6 +107,47 @@ impl Header {
         }
         bw.flush().and(Ok(bytes_written))
     }
+}
+
+pub struct Frame<R: Read> {
+    pub command: Command,
+    pub header: Header,
+    pub body: R,
+}
+
+impl<R: Read> Frame<R> {
+    pub fn new(command: Command, body: R) -> Self {
+        Frame {
+            command,
+            header: Header::new(),
+            body,
+        }
+    }
+
+    pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<usize> {
+        let mut bw = BufWriter::new(w);
+        let mut bytes_written = 0;
+        bytes_written += bw.write(self.command.to_string().as_bytes())?;
+        bytes_written += bw.write(b"\n")?;
+        bytes_written += self.header.write_to(&mut bw)?;
+        bytes_written += bw.write(b"\n")?;
+
+        bw.flush().and(Ok(bytes_written))
+    }
+}
+
+#[test]
+fn write_frame() {
+    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n";
+
+    let mut frame = Frame::new(Command::Connect, io::empty());
+    frame.header.add("Content-Type", "application/json");
+    frame.header.add("Content-Length", "30");
+
+    let mut buffer: Vec<u8> = Vec::new();
+    frame.write_to(&mut buffer).unwrap();
+    let data = str::from_utf8(&buffer).unwrap();
+    assert_eq!(target, data)
 }
 
 #[test]
