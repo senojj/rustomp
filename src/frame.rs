@@ -4,6 +4,7 @@ use std::io;
 use std::io::BufWriter;
 use std::str;
 use std::string;
+use std::convert::TryInto;
 
 pub enum Command {
     Connect,
@@ -96,14 +97,14 @@ impl Header {
         self.map.remove(key);
     }
 
-    pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<usize> {
+    pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<u64> {
         let mut bw = BufWriter::new(w);
-        let mut bytes_written = 0;
+        let mut bytes_written: u64 = 0;
 
         for (k, v) in self.map.iter() {
             let field_str = format!("{}: {}\n", encode(k), encode(&v.join(",")));
             let size = bw.write(field_str.as_bytes())?;
-            bytes_written += size;
+            bytes_written += size as u64;
         }
         bw.flush().and(Ok(bytes_written))
     }
@@ -124,13 +125,14 @@ impl<R: Read> Frame<R> {
         }
     }
 
-    pub fn write_to<W: Write>(&self, w: &mut W) -> io::Result<usize> {
+    pub fn write_to<W: Write>(&mut self, w: &mut W) -> io::Result<u64> {
         let mut bw = BufWriter::new(w);
-        let mut bytes_written = 0;
-        bytes_written += bw.write(self.command.to_string().as_bytes())?;
-        bytes_written += bw.write(b"\n")?;
-        bytes_written += self.header.write_to(&mut bw)?;
-        bytes_written += bw.write(b"\n")?;
+        let mut bytes_written: u64 = 0;
+        bytes_written += bw.write(self.command.to_string().as_bytes())? as u64;
+        bytes_written += bw.write(b"\n")? as u64;
+        bytes_written += self.header.write_to(&mut bw)? as u64;
+        bytes_written += bw.write(b"\n")? as u64;
+        bytes_written += io::copy(&mut self.body, &mut bw)?;
 
         bw.flush().and(Ok(bytes_written))
     }
