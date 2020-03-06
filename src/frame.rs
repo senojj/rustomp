@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Write, Read};
+use std::io::{Write, Read, Cursor};
 use std::io;
 use std::io::BufWriter;
 use std::str;
@@ -134,6 +134,7 @@ impl<R: Read> Frame<R> {
         bytes_written += self.header.write_to(&mut bw)? as u64;
         bytes_written += bw.write(b"\n")? as u64;
         bytes_written += io::copy(&mut self.body, &mut bw)?;
+        bytes_written += bw.write(b";")? as u64;
 
         bw.flush().and(Ok(bytes_written))
     }
@@ -141,9 +142,23 @@ impl<R: Read> Frame<R> {
 
 #[test]
 fn write_frame() {
-    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n";
+    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n;";
 
     let mut frame = Frame::new(Command::Connect, io::empty());
+    frame.header.add("Content-Type", "application/json");
+    frame.header.add("Content-Length", "30");
+
+    let mut buffer: Vec<u8> = Vec::new();
+    frame.write_to(&mut buffer).unwrap();
+    let data = str::from_utf8(&buffer).unwrap();
+    assert_eq!(target, data)
+}
+
+#[test]
+fn write_frame_with_body() {
+    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
+
+    let mut frame = Frame::new(Command::Connect, Cursor::new(b"{\"name\":\"Joshua\"}"));
     frame.header.add("Content-Type", "application/json");
     frame.header.add("Content-Length", "30");
 
