@@ -4,7 +4,6 @@ use std::io::Write;
 use std::io;
 use std::io::BufWriter;
 use std::str;
-use std::ops::Try;
 
 pub enum Command {
     Connect,
@@ -76,14 +75,14 @@ impl Header {
         }
     }
 
-    pub fn add(&mut self, key: &str, value: &str) -> () {
+    pub fn add(&mut self, key: &str, value: &str) {
         self.map
             .entry(encode_str(key))
-            .or_insert(Vec::with_capacity(1))
+            .or_insert_with(|| Vec::with_capacity(1))
             .push(encode_str(value));
     }
 
-    pub fn set(&mut self, key: &str, values: Vec<&str>) -> () {
+    pub fn set(&mut self, key: &str, values: Vec<&str>) {
         let mut c = Vec::with_capacity(values.len());
 
         for v in values {
@@ -94,14 +93,14 @@ impl Header {
             .insert(encode_str(key), c);
     }
 
-    pub fn remove(&mut self, key: &str) -> () {
+    pub fn remove(&mut self, key: &str) {
         self.map.remove(encode_str(key).as_str());
     }
 
     pub fn write_to<T: Write>(&self, w: T) -> io::Result<usize> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written = 0;
-        ​
+
         for (k, v) in self.map.iter() {
             let field_str = format!("{}: {}", k, v.join(","));
             let size = bw.write(field_str.as_bytes())?;
