@@ -97,17 +97,31 @@ impl Header {
         self.map.remove(encode_str(key).as_str());
     }
 
-    pub fn write_to<T: Write>(&self, w: T) -> io::Result<usize> {
+    pub fn write_to<T: Write>(&self, w: &mut T) -> io::Result<usize> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written = 0;
 
         for (k, v) in self.map.iter() {
-            let field_str = format!("{}: {}", k, v.join(","));
+            let field_str = format!("{}: {}\n", k, v.join(","));
             let size = bw.write(field_str.as_bytes())?;
             bytes_written += size;
         }
         bw.flush().and(Ok(bytes_written))
     }
+}
+
+#[test]
+fn write_header() {
+    let target = "Content-Type: application/json\nContent-Length: 30\n";
+
+    let mut header = Header::new();
+    header.add("Content-Type", "application/json");
+    header.add("Content-Length", "30");
+
+    let mut buffer: Vec<u8> = Vec::new();
+    header.write_to(&mut buffer).unwrap();
+    let data = str::from_utf8(&buffer).unwrap();
+    assert_eq!(target, data)
 }
 
 #[test]
