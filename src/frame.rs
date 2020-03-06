@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::fmt;
 use std::io::Write;
 use std::io;
@@ -49,7 +49,7 @@ impl fmt::Display for Command {
     }
 }
 
-fn encode(input: &String) -> String {
+fn encode(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
 
     for c in input.chars() {
@@ -64,14 +64,15 @@ fn encode(input: &String) -> String {
     output
 }
 
+#[derive(Default)]
 pub struct Header {
-    map: HashMap<String, Vec<String>>,
+    map: BTreeMap<String, Vec<String>>,
 }
 
 impl Header {
     pub fn new() -> Header {
         Header {
-            map: HashMap::new(),
+            map: BTreeMap::new(),
         }
     }
 
@@ -112,7 +113,7 @@ impl Header {
 
 #[test]
 fn write_header() {
-    let target = "Content-Type: application/json\nContent-Length: 30\n";
+    let target = "Content-Length: 30\nContent-Type: application/json\n";
 
     let mut header = Header::new();
     header.add("Content-Type", "application/json");
@@ -126,7 +127,7 @@ fn write_header() {
 
 #[test]
 fn write_header_colon() {
-    let target = "Content-Type: vnd\\capplication/json\nContent-Length: 30\n";
+    let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
 
     let mut header = Header::new();
     header.add("Content-Type", "vnd:application/json");
@@ -140,28 +141,28 @@ fn write_header_colon() {
 
 #[test]
 fn encode_backslash() {
-    let input = "Hello\\World".to_string();
-    let target = "Hello\\\\World".to_string();
-    assert_eq!(target, encode(&input))
+    let input = "Hello\\World";
+    let target = "Hello\\\\World";
+    assert_eq!(target, encode(input))
 }
 
 #[test]
 fn encode_carriage_return() {
-    let input = "Hello\rWorld".to_string();
-    let target = "Hello\\rWorld".to_string();
-    assert_eq!(target, encode(&input))
+    let input = "Hello\rWorld";
+    let target = "Hello\\rWorld";
+    assert_eq!(target, encode(input))
 }
 
 #[test]
 fn encode_newline() {
-    let input = "Hello\nWorld".to_string();
-    let target = "Hello\\nWorld".to_string();
-    assert_eq!(target, encode(&input))
+    let input = "Hello\nWorld";
+    let target = "Hello\\nWorld";
+    assert_eq!(target, encode(input))
 }
 
 #[test]
 fn encode_semicolon() {
-    let input = "Hello:World".to_string();
-    let target = "Hello\\cWorld".to_string();
-    assert_eq!(target, encode(&input))
+    let input = "Hello:World";
+    let target = "Hello\\cWorld";
+    assert_eq!(target, encode(input))
 }
