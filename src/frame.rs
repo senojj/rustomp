@@ -112,34 +112,6 @@ impl Header {
 }
 
 #[test]
-fn write_header() {
-    let target = "Content-Length: 30\nContent-Type: application/json\n";
-
-    let mut header = Header::new();
-    header.add("Content-Type", "application/json");
-    header.add("Content-Length", "30");
-
-    let mut buffer: Vec<u8> = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
-}
-
-#[test]
-fn write_header_colon() {
-    let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
-
-    let mut header = Header::new();
-    header.add("Content-Type", "vnd:application/json");
-    header.add("Content-Length", "30");
-
-    let mut buffer: Vec<u8> = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
-}
-
-#[test]
 fn encode_backslash() {
     let input = "Hello\\World";
     let target = "Hello\\\\World";
@@ -165,4 +137,32 @@ fn encode_semicolon() {
     let input = "Hello:World";
     let target = "Hello\\cWorld";
     assert_eq!(target, encode(input))
+}
+
+#[test]
+fn write_header() {
+    let target = "Content-Length: 30\nContent-Type: application/json\n";
+
+    let mut header = Header::new();
+    header.add("Content-Type", "application/json");
+    header.add("Content-Length", "30");
+
+    let mut buffer: Vec<u8> = Vec::new();
+    header.write_to(&mut buffer).unwrap();
+    let data = str::from_utf8(&buffer).unwrap();
+    assert_eq!(target, data)
+}
+
+#[test]
+fn write_header_encode_colon() {
+    let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
+
+    let mut header = Header::new();
+    header.add("Content-Type", "vnd:application/json");
+    header.add("Content-Length", "30");
+
+    let mut buffer: Vec<u8> = Vec::new();
+    header.write_to(&mut buffer).unwrap();
+    let data = str::from_utf8(&buffer).unwrap();
+    assert_eq!(target, data)
 }
