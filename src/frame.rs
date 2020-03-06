@@ -77,22 +77,21 @@ impl Header {
         }
     }
 
-    pub fn add(&mut self, key: &str, value: &str) {
+    pub fn add<T: Into<String>>(&mut self, key: T, value: T) {
         self.fields
-            .entry(key.to_string())
+            .entry(key.into())
             .or_insert_with(|| Vec::with_capacity(1))
-            .push(value.to_string());
+            .push(value.into());
     }
 
-    pub fn set(&mut self, key: &str, values: Vec<&str>) {
+    pub fn set<T: Into<String>>(&mut self, key: T, values: Vec<String>) {
         let mut c = Vec::with_capacity(values.len());
 
         for v in values {
-            c.push(v.to_string());
+            c.push(v);
         }
 
-        self.fields
-            .insert(key.to_string(), c);
+        self.fields.insert(key.into(), c);
     }
 
     pub fn remove(&mut self, key: &str) {
