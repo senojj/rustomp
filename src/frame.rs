@@ -163,6 +163,7 @@ impl<R: Read> Frame<R> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
     use std::io::Cursor;
