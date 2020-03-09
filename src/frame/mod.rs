@@ -9,6 +9,9 @@ use std::io as stdio;
 use std::io::BufWriter;
 use std::str;
 use std::fmt;
+use io::DelimitedReader;
+
+const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 
 pub enum Command {
     Connect,
@@ -100,11 +103,11 @@ impl Header {
     }
 
     pub fn read_from<R: Read>(r: &mut R) -> Result<Self, ReadError> {
-        let mut limited_reader = r.take(1024 * 1000);
+        let mut limited_reader = r.take(MAX_HEADER_SIZE);
         let mut header = Self::new();
 
         loop {
-            let mut delimited_reader = io::DelimitedReader::new(&mut limited_reader, b'\n');
+            let mut delimited_reader = DelimitedReader::new(&mut limited_reader, b'\n');
             let mut buffer: Vec<u8> = Vec::new();
             let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
 
