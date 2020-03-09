@@ -131,7 +131,7 @@ impl<R: Read> Frame<R> {
         let mut bytes_written: u64 = 0;
         bytes_written += bw.write(self.command.to_string().as_bytes())? as u64;
         bytes_written += bw.write(b"\n")? as u64;
-        bytes_written += self.header.write_to(&mut bw)? as u64;
+        bytes_written += self.header.write_to(&mut bw)?;
         bytes_written += bw.write(b"\n")? as u64;
         bytes_written += io::copy(&mut self.body, &mut bw)?;
         bytes_written += bw.write(b";")? as u64;
