@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::{Write, Read};
 use std::io;
+use std::error;
 use std::io::BufWriter;
 use std::str;
 use std::fmt;
@@ -10,6 +11,49 @@ const BACKSLASH: char = '\\';
 const NEWLINE: char = '\n';
 const CARRIAGE_RETURN: char = '\r';
 const COLON: char = ':';
+
+#[derive(Debug)]
+pub enum ReadError {
+    IO(io::Error),
+    Encoding(str::Utf8Error),
+    Format(String),
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ReadError::*;
+
+        match self {
+            IO(err) => err.fmt(f),
+            Encoding(err) => err.fmt(f),
+            Format(string) => string.fmt(f),
+        }
+    }
+}
+
+impl error::Error for ReadError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        use self::ReadError::*;
+
+        match self {
+            IO(err) => Some(err),
+            Encoding(err) => Some(err),
+            Format(string) => None,
+        }
+    }
+}
+
+impl std::convert::From<io::Error> for ReadError {
+    fn from(error: io::Error) -> Self {
+        ReadError::IO(error)
+    }
+}
+
+impl std::convert::From<str::Utf8Error> for ReadError {
+    fn from(error: str::Utf8Error) -> Self {
+        ReadError::Encoding(error)
+    }
+}
 
 pub enum Command {
     Connect,
@@ -88,7 +132,50 @@ fn decode(input: &str) -> String {
     output
 }
 
-#[derive(Default)]
+struct DelimitedReader<R: Read> {
+    reader: R,
+    delimiter: u8,
+    done: bool,
+}
+
+impl<R: Read> DelimitedReader<R> {
+    fn new(r: R, del: u8) -> Self {
+        DelimitedReader{
+            reader: r,
+            delimiter: del,
+            done: false,
+        }
+    }
+}
+
+impl<R: Read> Read for DelimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.done {
+            return Ok(0)
+        }
+        let mut total_read: usize = 0;
+        let mut inner_buffer: [u8; 1] = [b'\0'];
+
+        let mut ctr = 0;
+
+        while ctr < buf.len() {
+            let bread = self.reader.read(&mut inner_buffer)?;
+
+            if bread > 0 {
+                if inner_buffer[0] == self.delimiter {
+                    self.done = true;
+                    return Ok(total_read)
+                }
+                total_read += bread;
+                buf[ctr] = inner_buffer[0];
+            }
+            ctr += 1;
+        }
+        Ok(total_read)
+    }
+}
+
+#[derive(Default, PartialEq, Debug)]
 pub struct Header {
     fields: BTreeMap<String, Vec<String>>,
 }
@@ -131,6 +218,33 @@ impl Header {
             bytes_written += size as u64;
         }
         bw.flush().and(Ok(bytes_written))
+    }
+
+    pub fn read_from<R: Read>(r: &mut R) -> Result<Self, ReadError> {
+        let mut limited_reader = r.take(1024 * 1000);
+        let mut header = Self::new();
+
+        loop {
+            let mut delimited_reader = DelimitedReader::new(&mut limited_reader, b'\n');
+            let mut buffer: Vec<u8> = Vec::new();
+            let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
+
+            if bytes_read < 1 {
+                break;
+            }
+            let line = str::from_utf8(&buffer)?;
+            let parts: Vec<&str> = line.split(':').collect();
+
+            if parts.len() < 2 {
+                return Err(ReadError::Format(String::from("invalid header field format")))
+            }
+            let field_name = decode(parts[0]);
+            let field_value = decode(parts[1]);
+
+            header.add(field_name.trim(), field_value.trim_start())
+
+        }
+        Ok(header)
     }
 }
 
@@ -285,5 +399,57 @@ mod test {
         frame.write_to(&mut buffer).unwrap();
         let data = str::from_utf8(&buffer).unwrap();
         assert_eq!(target, data)
+    }
+
+    #[test]
+    fn delimited_reader_middle() {
+        let input = b"this is; a test";
+        let reader = Cursor::new(input);
+
+        let mut dreader = DelimitedReader::new(reader, b';');
+        let mut buffer: Vec<u8> = Vec::new();
+        Read::read_to_end(&mut dreader, &mut buffer).unwrap();
+        let output = str::from_utf8(&buffer).unwrap();
+        let target = "this is";
+        assert_eq!(target, output)
+    }
+
+    #[test]
+    fn delimited_reader_none() {
+        let input = b"this is a test";
+        let reader = Cursor::new(input);
+
+        let mut dreader = DelimitedReader::new(reader, b';');
+        let mut buffer: Vec<u8> = Vec::new();
+        Read::read_to_end(&mut dreader, &mut buffer).unwrap();
+        let output = str::from_utf8(&buffer).unwrap();
+        let target = "this is a test";
+        assert_eq!(target, output)
+    }
+
+    #[test]
+    fn delimited_reader_beginning() {
+        let input = b";this is a test";
+        let reader = Cursor::new(input);
+
+        let mut dreader = DelimitedReader::new(reader, b';');
+        let mut buffer: Vec<u8> = Vec::new();
+        Read::read_to_end(&mut dreader, &mut buffer).unwrap();
+        let output = str::from_utf8(&buffer).unwrap();
+        let target = "";
+        assert_eq!(target, output)
+    }
+
+    #[test]
+    fn read_header() {
+        let input = b"Content-Type: application/json\nContent-Length: 30\nName: Joshua\n";
+        let mut reader: Cursor<&[u8]> = Cursor::new(&input[..]);
+        let header = Header::read_from(&mut reader).unwrap();
+
+        let mut target = Header::new();
+        target.add("Content-Type", "application/json");
+        target.add("Content-Length", "30");
+        target.add("Name", "Joshua");
+        assert_eq!(target, header);
     }
 }
