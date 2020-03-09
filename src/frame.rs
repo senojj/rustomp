@@ -1,10 +1,15 @@
 use std::collections::BTreeMap;
-use std::io::{Write, Read, Cursor};
+use std::io::{Write, Read};
 use std::io;
 use std::io::BufWriter;
 use std::str;
-use std::string;
 use std::fmt;
+
+const NULL: char = '\0';
+const BACKSLASH: char = '\\';
+const NEWLINE: char = '\n';
+const CARRIAGE_RETURN: char = '\r';
+const COLON: char = ':';
 
 pub enum Command {
     Connect,
@@ -55,10 +60,10 @@ fn encode(input: &str) -> String {
 
     for c in input.chars() {
         match c {
-            '\\' => output.push_str("\\\\"),
-            '\r' => output.push_str("\\r"),
-            '\n' => output.push_str("\\n"),
-            ':' => output.push_str("\\c"),
+            BACKSLASH => output.push_str("\\\\"),
+            CARRIAGE_RETURN => output.push_str("\\r"),
+            NEWLINE => output.push_str("\\n"),
+            COLON => output.push_str("\\c"),
             a => output.push(a),
         }
     }
@@ -67,18 +72,18 @@ fn encode(input: &str) -> String {
 
 fn decode(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
-    let mut last_char: char = '\0';
+    let mut last_char = NULL;
 
     for c in input.chars() {
         match c {
-            'c' if last_char == '\\' => output.push_str(":"),
-            'n' if last_char == '\\' => output.push_str("\n"),
-            'r' if last_char == '\\' => output.push_str("\r"),
-            '\\' if last_char == '\\' => output.push_str("\\"),
-            '\\' => (),
+            'c' if last_char == BACKSLASH => output.push_str(":"),
+            'n' if last_char == BACKSLASH => output.push_str("\n"),
+            'r' if last_char == BACKSLASH => output.push_str("\r"),
+            BACKSLASH if last_char == BACKSLASH => output.push_str("\\"),
+            BACKSLASH => (),
             a => output.push(a),
         }
-        last_char = if last_char == '\\' && c == '\\' { '\0' } else { c }
+        last_char = if last_char == BACKSLASH && c == BACKSLASH { NULL } else { c }
     }
     output
 }
@@ -158,121 +163,126 @@ impl<R: Read> Frame<R> {
     }
 }
 
-#[test]
-fn encode_backslash() {
-    let input = "Hello\\World";
-    let target = "Hello\\\\World";
-    assert_eq!(target, encode(input))
-}
+mod test {
+    use super::*;
+    use std::io::Cursor;
 
-#[test]
-fn encode_carriage_return() {
-    let input = "Hello\rWorld";
-    let target = "Hello\\rWorld";
-    assert_eq!(target, encode(input))
-}
+    #[test]
+    fn encode_backslash() {
+        let input = "Hello\\World";
+        let target = "Hello\\\\World";
+        assert_eq!(target, encode(input))
+    }
 
-#[test]
-fn encode_newline() {
-    let input = "Hello\nWorld";
-    let target = "Hello\\nWorld";
-    assert_eq!(target, encode(input))
-}
+    #[test]
+    fn encode_carriage_return() {
+        let input = "Hello\rWorld";
+        let target = "Hello\\rWorld";
+        assert_eq!(target, encode(input))
+    }
 
-#[test]
-fn encode_semicolon() {
-    let input = "Hello:World";
-    let target = "Hello\\cWorld";
-    assert_eq!(target, encode(input))
-}
+    #[test]
+    fn encode_newline() {
+        let input = "Hello\nWorld";
+        let target = "Hello\\nWorld";
+        assert_eq!(target, encode(input))
+    }
 
-#[test]
-fn decode_backslash() {
-    let input = "Hello\\\\World";
-    let target = "Hello\\World";
-    assert_eq!(target, decode(input))
-}
+    #[test]
+    fn encode_semicolon() {
+        let input = "Hello:World";
+        let target = "Hello\\cWorld";
+        assert_eq!(target, encode(input))
+    }
 
-#[test]
-fn decode_newline() {
-    let input = "Hello\\nWorld";
-    let target = "Hello\nWorld";
-    assert_eq!(target, decode(input))
-}
+    #[test]
+    fn decode_backslash() {
+        let input = "Hello\\\\World";
+        let target = "Hello\\World";
+        assert_eq!(target, decode(input))
+    }
 
-#[test]
-fn decode_backslash_newline() {
-    let input = "Hello\\\\\\nWorld";
-    let target = "Hello\\\nWorld";
-    assert_eq!(target, decode(input))
-}
+    #[test]
+    fn decode_newline() {
+        let input = "Hello\\nWorld";
+        let target = "Hello\nWorld";
+        assert_eq!(target, decode(input))
+    }
 
-#[test]
-fn decode_colon() {
-    let input = "Hello\\cWorld";
-    let target = "Hello:World";
-    assert_eq!(target, decode(input))
-}
+    #[test]
+    fn decode_backslash_newline() {
+        let input = "Hello\\\\\\nWorld";
+        let target = "Hello\\\nWorld";
+        assert_eq!(target, decode(input))
+    }
 
-#[test]
-fn decode_carriage_return() {
-    let input = "Hello\\rWorld";
-    let target = "Hello\rWorld";
-    assert_eq!(target, decode(input))
-}
+    #[test]
+    fn decode_colon() {
+        let input = "Hello\\cWorld";
+        let target = "Hello:World";
+        assert_eq!(target, decode(input))
+    }
 
-#[test]
-fn write_header() {
-    let target = "Content-Length: 30\nContent-Type: application/json\n";
+    #[test]
+    fn decode_carriage_return() {
+        let input = "Hello\\rWorld";
+        let target = "Hello\rWorld";
+        assert_eq!(target, decode(input))
+    }
 
-    let mut header = Header::new();
-    header.add("Content-Type", "application/json");
-    header.add("Content-Length", "30");
+    #[test]
+    fn write_header() {
+        let target = "Content-Length: 30\nContent-Type: application/json\n";
 
-    let mut buffer: Vec<u8> = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
-}
+        let mut header = Header::new();
+        header.add("Content-Type", "application/json");
+        header.add("Content-Length", "30");
 
-#[test]
-fn write_header_encode_colon() {
-    let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
+        let mut buffer: Vec<u8> = Vec::new();
+        header.write_to(&mut buffer).unwrap();
+        let data = str::from_utf8(&buffer).unwrap();
+        assert_eq!(target, data)
+    }
 
-    let mut header = Header::new();
-    header.add("Content-Type", "vnd:application/json");
-    header.add("Content-Length", "30");
+    #[test]
+    fn write_header_encode_colon() {
+        let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
 
-    let mut buffer: Vec<u8> = Vec::new();
-    header.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
-}
+        let mut header = Header::new();
+        header.add("Content-Type", "vnd:application/json");
+        header.add("Content-Length", "30");
 
-#[test]
-fn write_frame() {
-    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n;";
+        let mut buffer: Vec<u8> = Vec::new();
+        header.write_to(&mut buffer).unwrap();
+        let data = str::from_utf8(&buffer).unwrap();
+        assert_eq!(target, data)
+    }
 
-    let mut frame = Frame::new(Command::Connect, io::empty());
-    frame.header.add("Content-Type", "application/json");
-    frame.header.add("Content-Length", "30");
+    #[test]
+    fn write_frame() {
+        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n;";
 
-    let mut buffer: Vec<u8> = Vec::new();
-    frame.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
-}
+        let mut frame = Frame::new(Command::Connect, io::empty());
+        frame.header.add("Content-Type", "application/json");
+        frame.header.add("Content-Length", "30");
 
-#[test]
-fn write_frame_with_body() {
-    let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
+        let mut buffer: Vec<u8> = Vec::new();
+        frame.write_to(&mut buffer).unwrap();
+        let data = str::from_utf8(&buffer).unwrap();
+        assert_eq!(target, data)
+    }
 
-    let mut frame = Frame::new(Command::Connect, Cursor::new(b"{\"name\":\"Joshua\"}"));
-    frame.header.add("Content-Type", "application/json");
-    frame.header.add("Content-Length", "30");
+    #[test]
+    fn write_frame_with_body() {
+        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
 
-    let mut buffer: Vec<u8> = Vec::new();
-    frame.write_to(&mut buffer).unwrap();
-    let data = str::from_utf8(&buffer).unwrap();
-    assert_eq!(target, data)
+        let mut frame = Frame::new(Command::Connect, Cursor::new(b"{\"name\":\"Joshua\"}"));
+        frame.header.add("Content-Type", "application/json");
+        frame.header.add("Content-Length", "30");
+
+        let mut buffer: Vec<u8> = Vec::new();
+        frame.write_to(&mut buffer).unwrap();
+        let data = str::from_utf8(&buffer).unwrap();
+        assert_eq!(target, data)
+    }
 }
