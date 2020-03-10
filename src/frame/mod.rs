@@ -115,16 +115,24 @@ impl Header {
                 break;
             }
             let line = str::from_utf8(&buffer)?;
-            let parts: Vec<&str> = line.split(':').collect();
+            let clean_line = line.trim_end_matches('\r');
+            let parts: Vec<&str> = clean_line.split(':').collect();
 
             if parts.len() < 2 {
-                return Err(ReadError::Format(String::from("invalid header field format")))
+                return Err(ReadError::Format(
+                    format!("invalid number of header field parts. Expected 2, got {}", parts.len())
+                ));
             }
             let field_name = string::decode(parts[0]);
             let field_value = string::decode(parts[1]);
 
-            header.add(field_name.trim(), field_value.trim_start())
+            let clean_field_name = field_name.trim();
+            let clean_field_value = field_value.trim_start();
 
+            if clean_field_name.is_empty() {
+                return Err(ReadError::Format(String::from("empty header field name")));
+            }
+            header.add(clean_field_name, clean_field_value);
         }
         Ok(header)
     }
