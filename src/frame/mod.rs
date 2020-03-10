@@ -230,7 +230,7 @@ mod test {
 
     #[test]
     fn read_header() {
-        let input = b"Content-Type: application/json\nContent-Length: 30\nName: Joshua\n";
+        let input = b"Content-Type: application/json\r\nContent-Length: 30\r\nName: Joshua\r\n";
         let mut reader: Cursor<&[u8]> = Cursor::new(&input[..]);
         let header = Header::read_from(&mut reader).unwrap();
 
