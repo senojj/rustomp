@@ -271,7 +271,7 @@ impl<'a, R: Read> Frame<'a, R> {
         if clean_string_command.is_empty() {
             return Err(ReadError::Format(String::from("empty command")));
         }
-        Command::from_str(clean_string_command).map_err(|e| ReadError::Format(e))
+        Command::from_str(clean_string_command).map_err(ReadError::Format)
     }
 
     pub fn read_from(mut r: &'a mut R) -> Result<Self, ReadError> {
