@@ -14,6 +14,7 @@ use std::str::FromStr;
 
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 
+#[derive(Debug, PartialEq)]
 pub enum Command {
     Connect,
     Stomp,
@@ -342,6 +343,26 @@ mod test {
         frame.write_to(&mut buffer).unwrap();
         let data = str::from_utf8(&buffer).unwrap();
         assert_eq!(target, data)
+    }
+
+    #[test]
+    fn read_frame_with_body() {
+        let input = b"CONNECT\nContent-Length: 17\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
+        let mut reader = Cursor::new(&input[..]);
+        let mut frame = Frame::read_from(&mut reader).unwrap();
+
+        let mut target_header = Header::new();
+        target_header.add("Content-Type", "application/json");
+        target_header.add("Content-Length", "17");
+
+        let target_body = b"{\"name\":\"Joshua\"}".to_vec();
+
+        let mut buffer: Vec<u8> = Vec::new();
+        Read::read_to_end(&mut frame.body, &mut buffer).unwrap();
+
+        assert_eq!(Command::Connect, frame.command);
+        assert_eq!(target_header, frame.header);
+        assert_eq!(target_body, buffer);
     }
 
     #[test]
