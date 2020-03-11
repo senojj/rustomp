@@ -44,6 +44,32 @@ impl<R: Read> Read for DelimitedReader<R> {
     }
 }
 
+pub struct MultiReader<A: Read, B: Read> {
+    reader_a: A,
+    reader_b: B,
+}
+
+impl<A: Read, B: Read> MultiReader<A, B> {
+    pub fn new(a: A, b: B) -> Self {
+        MultiReader{
+            reader_a: a,
+            reader_b: b,
+        }
+    }
+}
+
+impl<A: Read, B: Read> Read for MultiReader<A, B> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_from_a = self.reader_a.read(buf)?;
+
+        if bytes_from_a > 0 {
+            Ok(bytes_from_a)
+        } else {
+            self.reader_b.read(buf)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
