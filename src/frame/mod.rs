@@ -249,7 +249,7 @@ impl<'a, R: Read> Frame<'a, R> {
         bytes_written += self.header.write_to(&mut bw)?;
         bytes_written += bw.write(b"\n")? as u64;
         bytes_written += stdio::copy(&mut self.body, &mut bw)?;
-        bytes_written += bw.write(b";")? as u64;
+        bytes_written += bw.write(b"\0")? as u64;
 
         bw.flush().and(Ok(bytes_written))
     }
@@ -317,7 +317,7 @@ mod test {
 
     #[test]
     fn write_frame() {
-        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n;";
+        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n\0";
         let mut input = stdio::empty();
         let mut frame = Frame::new(Command::Connect, &mut input);
         frame.header.add("Content-Type", "application/json");
@@ -331,7 +331,7 @@ mod test {
 
     #[test]
     fn write_frame_with_body() {
-        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
+        let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0";
         let mut input = Cursor::new(b"{\"name\":\"Joshua\"}");
         let mut frame = Frame::new(Command::Connect, &mut input);
         frame.header.add("Content-Type", "application/json");
@@ -345,7 +345,7 @@ mod test {
 
     #[test]
     fn read_frame_with_body_with_content_length() {
-        let input = b"CONNECT\nContent-Length: 17\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};";
+        let input = b"CONNECT\nContent-Length: 17\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0";
         let mut reader = Cursor::new(&input[..]);
         let mut frame = Frame::read_from(&mut reader).unwrap();
 
@@ -365,7 +365,7 @@ mod test {
 
     #[test]
     fn read_frame_with_body_without_content_length() {
-        let input = b"CONNECT\nContent-Type: application/json\n\n{\"name\":\"Joshua\"};(Should not read this)";
+        let input = b"CONNECT\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0(Should not read this)";
         let mut reader = Cursor::new(&input[..]);
         let mut frame = Frame::read_from(&mut reader).unwrap();
 
