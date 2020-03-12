@@ -121,45 +121,19 @@ impl<R: Read> ReadFrom<R> for DelimitedReadFrom {
         let mut ctr = 0;
 
         while ctr < buffer.len() {
-            let bread = reader.read(&mut inner_buffer)?;
+            let bytes_read = reader.read(&mut inner_buffer)?;
 
-            if bread > 0 {
+            if bytes_read > 0 {
                 if inner_buffer[0] == self.delimiter {
                     self.done = true;
                     return Ok(total_read);
                 }
-                total_read += bread;
+                total_read += bytes_read;
                 buffer[ctr] = inner_buffer[0];
             }
             ctr += 1;
         }
         Ok(total_read)
-    }
-}
-
-pub struct MultiReader<'a, R: Read, T: Read> {
-    reader_a: &'a mut R,
-    reader_b: &'a mut T,
-}
-
-impl<'a, R: Read, T: Read> MultiReader<'a, R, T> {
-    pub fn new(reader_a: &'a mut R, reader_b: &'a mut T) -> Self {
-        MultiReader {
-            reader_a,
-            reader_b,
-        }
-    }
-}
-
-impl<'a, R: Read, T: Read> Read for MultiReader<'a, R, T> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let bytes_from_a = self.reader_a.read(buf)?;
-
-        if bytes_from_a > 0 {
-            Ok(bytes_from_a)
-        } else {
-            self.reader_b.read(buf)
-        }
     }
 }
 
