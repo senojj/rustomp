@@ -2,18 +2,53 @@ use std::io;
 use std::io::Read;
 use std::cmp::min;
 
-pub trait ReadFrom<R: Read> {
+struct Guard<'a> {
+    length: usize,
+    buffer: &'a mut Vec<u8>,
+}
+
+impl<'a> Guard<'a> {
+    fn new(length: usize, buffer: &'a mut Vec<u8>) -> Self {
+        Guard {
+            length,
+            buffer,
+        }
+    }
+}
+
+impl Drop for Guard<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            self.buffer.set_len(self.length);
+        }
+    }
+}
+
+pub trait ReadFrom<R: Read + ?Sized> {
     fn read_from(&mut self, reader: &mut R, buffer: &mut [u8]) -> io::Result<usize>;
 
     fn read_to_end(&mut self, reader: &mut R, buffer: &mut Vec<u8>) -> io::Result<usize> {
-        let mut total_bytes_read: usize = 0;
-        let mut bytes_read = self.read_from(reader, buffer)?;
+        let start_len = buffer.len();
+        let mut guard = Guard::new(buffer.len(), buffer);
+        loop {
+            if guard.length == guard.buffer.len() {
+                unsafe {
+                    guard.buffer.reserve(32);
+                    let capacity = guard.buffer.capacity();
+                    guard.buffer.set_len(capacity);
+                    let buffer_slice = &mut guard.buffer[guard.length..];
+                    let buffer_ptr = buffer_slice.as_mut_ptr();
+                    std::ptr::write_bytes(buffer_ptr, 0, buffer_slice.len());
+                }
+            }
+            let bytes_read = self.read_from(reader, &mut guard.buffer[guard.length..])?;
 
-        while bytes_read > 0 {
-            total_bytes_read += bytes_read;
-            bytes_read = self.read_from(reader, buffer)?;
-        };
-        Ok(total_bytes_read)
+            if bytes_read == 0 {
+                break;
+            }
+            guard.length += bytes_read;
+        }
+        Ok(guard.length - start_len)
     }
 }
 
