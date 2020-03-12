@@ -288,6 +288,19 @@ mod test {
     use std::io::Cursor;
 
     #[test]
+    fn read_header() {
+        let input = b"Content-Type: application/json\r\nContent-Length: 30\r\nName: Joshua\r\n";
+        let mut reader = Cursor::new(&input[..]);
+        let header = Header::read_from(&mut reader).unwrap();
+
+        let mut target = Header::new();
+        target.add("Content-Type", "application/json");
+        target.add("Content-Length", "30");
+        target.add("Name", "Joshua");
+        assert_eq!(target, header);
+    }
+
+    #[test]
     fn write_header() {
         let target = "Content-Length: 30\nContent-Type: application/json\n";
 
@@ -380,18 +393,5 @@ mod test {
         assert_eq!(Command::Connect, frame.command);
         assert_eq!(target_header, frame.header);
         assert_eq!(target_body, buffer);
-    }
-
-    #[test]
-    fn read_header() {
-        let input = b"Content-Type: application/json\r\nContent-Length: 30\r\nName: Joshua\r\n";
-        let mut reader = Cursor::new(&input[..]);
-        let header = Header::read_from(&mut reader).unwrap();
-
-        let mut target = Header::new();
-        target.add("Content-Type", "application/json");
-        target.add("Content-Length", "30");
-        target.add("Name", "Joshua");
-        assert_eq!(target, header);
     }
 }
