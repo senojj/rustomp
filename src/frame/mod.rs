@@ -174,14 +174,14 @@ impl Header {
 
 const NULL: u8 = b'\0';
 
-pub struct Body<'a, R: Read> {
-    reader: &'a mut R,
+pub struct Body<R: Read> {
+    reader: R,
     content_length: u64,
     done: bool,
 }
 
-impl<'a, R: Read> Body<'a, R> {
-    fn new(reader: &'a mut R) -> Self {
+impl<R: Read> Body<R> {
+    fn new(reader: R) -> Self {
         Body {
             reader,
             content_length: 0,
@@ -189,7 +189,7 @@ impl<'a, R: Read> Body<'a, R> {
         }
     }
 
-    fn new_with_length(reader: &'a mut R, content_length: u64) -> Self {
+    fn new_with_length(reader: R, content_length: u64) -> Self {
         Body {
             reader,
             content_length,
@@ -202,7 +202,7 @@ impl<'a, R: Read> Body<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for Body<'a, R> {
+impl<R: Read> Read for Body<R> {
     fn read(&mut self, buf: &mut [u8]) -> stdio::Result<usize> {
         if self.done {
             return Ok(0);
@@ -236,14 +236,14 @@ impl<'a, R: Read> Read for Body<'a, R> {
     }
 }
 
-pub struct Frame<'a, R: Read> {
+pub struct Frame<R: Read> {
     pub command: Command,
     pub header: Header,
-    pub body: Body<'a, R>,
+    pub body: Body<R>,
 }
 
-impl<'a, R: Read> Frame<'a, R> {
-    pub fn new(command: Command, body: &'a mut R) -> Self {
+impl<R: Read> Frame<R> {
+    pub fn new(command: Command, body: R) -> Self {
         Frame {
             command,
             header: Header::new(),
@@ -251,7 +251,7 @@ impl<'a, R: Read> Frame<'a, R> {
         }
     }
 
-    fn new_with_header(command: Command, header: Header, body: &'a mut R) -> Self {
+    fn new_with_header(command: Command, header: Header, body: R) -> Self {
         let value = header.get("Content-Length").map(|v| v.first()).unwrap_or(None);
 
         let content = match value {
@@ -297,8 +297,8 @@ impl<'a, R: Read> Frame<'a, R> {
         Command::from_str(clean_string_command).map_err(ReadError::Format)
     }
 
-    pub fn read_from(reader: &'a mut R) -> Result<Self, ReadError> {
-        let mut null_terminated_reader = DelimitedReader::new(reader, NULL);
+    pub fn read_from(mut reader: R) -> Result<Self, ReadError> {
+        let mut null_terminated_reader = DelimitedReader::new(&mut reader, NULL);
         let command = Frame::read_command(&mut null_terminated_reader)?;
         let header = Header::read_from(&mut null_terminated_reader)?;
         let frame = Frame::new_with_header(command, header, reader);

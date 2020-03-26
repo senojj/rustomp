@@ -1,14 +1,14 @@
 use std::io;
 use std::io::Read;
 
-pub struct DelimitedReader<'a, R: Read> {
-    reader: &'a mut R,
+pub struct DelimitedReader<R: Read> {
+    reader: R,
     delimiter: u8,
     done: bool,
 }
 
-impl<'a, R: Read> DelimitedReader<'a, R> {
-    pub fn new(reader: &'a mut R, delimiter: u8) -> Self {
+impl<R: Read> DelimitedReader<R> {
+    pub fn new(reader: R, delimiter: u8) -> Self {
         DelimitedReader {
             reader,
             delimiter,
@@ -17,7 +17,7 @@ impl<'a, R: Read> DelimitedReader<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for DelimitedReader<'a, R> {
+impl<R: Read> Read for DelimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.done {
             return Ok(0);
