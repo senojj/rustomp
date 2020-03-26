@@ -9,9 +9,9 @@ use std::io as stdio;
 use std::io::BufWriter;
 use std::str;
 use std::fmt;
-use io::{DelimitedReadFrom, TakeReadFrom, ReadFrom};
 use std::str::FromStr;
-use crate::frame::io::ReadFromReader;
+use crate::frame::io::{DelimitedReader};
+use std::cmp::min;
 
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 
@@ -141,9 +141,9 @@ impl Header {
         let mut header = Self::new();
 
         loop {
-            let mut delimited_reader_from = DelimitedReadFrom::new(b'\n');
+            let mut delimited_reader = DelimitedReader::new(&mut limited_reader, b'\n');
             let mut buffer: Vec<u8> = Vec::new();
-            let bytes_read = ReadFrom::read_to_end(&mut delimited_reader_from, &mut limited_reader, &mut buffer)?;
+            let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
 
             if bytes_read < 1 {
                 break;
@@ -172,26 +172,28 @@ impl Header {
     }
 }
 
+const NULL: u8 = b'\0';
+
 pub struct Body<'a, R: Read> {
     reader: &'a mut R,
-    content_length_reader: TakeReadFrom,
-    null_terminated_reader: DelimitedReadFrom,
+    content_length: u64,
+    done: bool,
 }
 
 impl<'a, R: Read> Body<'a, R> {
     fn new(reader: &'a mut R) -> Self {
         Body {
             reader,
-            content_length_reader: TakeReadFrom::new(0),
-            null_terminated_reader: DelimitedReadFrom::new(b'\0'),
+            content_length: 0,
+            done: false,
         }
     }
 
     fn new_with_length(reader: &'a mut R, content_length: u64) -> Self {
         Body {
             reader,
-            content_length_reader: TakeReadFrom::new(content_length),
-            null_terminated_reader: DelimitedReadFrom::new(b'\0'),
+            content_length,
+            done: false,
         }
     }
 
@@ -202,12 +204,35 @@ impl<'a, R: Read> Body<'a, R> {
 
 impl<'a, R: Read> Read for Body<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> stdio::Result<usize> {
-        let content_bytes_read = self.content_length_reader.read_from(self.reader, buf)?;
-
-        if content_bytes_read > 0 {
-            return Ok(content_bytes_read);
+        if self.done {
+            return Ok(0);
         }
-        self.null_terminated_reader.read_from(self.reader, buf)
+
+        if self.content_length == 0 {
+            let mut total_read: usize = 0;
+            let mut inner_buffer: [u8; 1] = [NULL];
+
+            let mut ctr = 0;
+
+            while ctr < buf.len() {
+                let bytes_read = self.reader.read(&mut inner_buffer)?;
+
+                if bytes_read > 0 {
+                    if inner_buffer[0] == NULL {
+                        self.done = true;
+                        return Ok(total_read);
+                    }
+                    total_read += bytes_read;
+                    buf[ctr] = inner_buffer[0];
+                }
+                ctr += 1;
+            }
+            return Ok(total_read);
+        }
+        let max = min(buf.len() as u64, self.content_length) as usize;
+        let bytes_read = self.reader.read(&mut buf[..max])?;
+        self.content_length -= bytes_read as u64;
+        Ok(bytes_read)
     }
 }
 
@@ -256,9 +281,9 @@ impl<'a, R: Read> Frame<'a, R> {
 
     fn read_command(r: &mut R) -> Result<Command, ReadError> {
         let mut command_reader = r.take(1024);
-        let mut command_line_reader = DelimitedReadFrom::new(b'\n');
+        let mut command_line_reader = DelimitedReader::new(&mut command_reader, b'\n');
         let mut command_buffer: Vec<u8> = Vec::new();
-        let cmd_bytes_read = ReadFrom::read_to_end(&mut command_line_reader, &mut command_reader, &mut command_buffer)?;
+        let cmd_bytes_read = Read::read_to_end(&mut command_line_reader, &mut command_buffer)?;
 
         if cmd_bytes_read < 1 {
             return Err(ReadError::Format(String::from("empty command")));
@@ -272,9 +297,8 @@ impl<'a, R: Read> Frame<'a, R> {
         Command::from_str(clean_string_command).map_err(ReadError::Format)
     }
 
-    pub fn read_from(mut reader: &'a mut R) -> Result<Self, ReadError> {
-        let mut null_terminated_reader_from = DelimitedReadFrom::new(b'\0');
-        let mut null_terminated_reader = ReadFromReader::new(&mut null_terminated_reader_from, &mut reader);
+    pub fn read_from(reader: &'a mut R) -> Result<Self, ReadError> {
+        let mut null_terminated_reader = DelimitedReader::new(reader, NULL);
         let command = Frame::read_command(&mut null_terminated_reader)?;
         let header = Header::read_from(&mut null_terminated_reader)?;
         let frame = Frame::new_with_header(command, header, reader);
