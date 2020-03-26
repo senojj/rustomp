@@ -29,7 +29,7 @@ impl error::Error for ReadError {
         match self {
             IO(err) => Some(err),
             Encoding(err) => Some(err),
-            Format(string) => None,
+            Format(_) => None,
         }
     }
 }

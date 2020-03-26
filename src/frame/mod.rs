@@ -125,7 +125,7 @@ impl Header {
         self.fields.remove(key);
     }
 
-    pub fn write_to<W: Write>(&self, w: &mut W) -> stdio::Result<u64> {
+    pub fn write_to<W: Write>(&self, w: W) -> stdio::Result<u64> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written: u64 = 0;
 
@@ -137,7 +137,7 @@ impl Header {
         bw.flush().and(Ok(bytes_written))
     }
 
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self, ReadError> {
+    fn read_from<R: Read>(reader: R) -> Result<Self, ReadError> {
         let mut limited_reader = reader.take(MAX_HEADER_SIZE);
         let mut header = Self::new();
 
@@ -265,7 +265,7 @@ impl<R: Read> Frame<R> {
         }
     }
 
-    pub fn write_to<W: Write>(&mut self, w: &mut W) -> stdio::Result<u64> {
+    pub fn write_to<W: Write>(&mut self, w: W) -> stdio::Result<u64> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written: u64 = 0;
         bytes_written += bw.write(self.command.to_string().as_bytes())? as u64;
@@ -278,7 +278,7 @@ impl<R: Read> Frame<R> {
         bw.flush().and(Ok(bytes_written))
     }
 
-    fn read_command(r: &mut R) -> Result<Command, ReadError> {
+    fn read_command(r: R) -> Result<Command, ReadError> {
         let mut command_reader = r.take(1024);
         let mut command_line_reader = DelimitedReader::new(&mut command_reader, b'\n');
         let mut command_buffer: Vec<u8> = Vec::new();
