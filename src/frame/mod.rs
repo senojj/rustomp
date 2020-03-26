@@ -14,6 +14,7 @@ use crate::frame::io::{DelimitedReader};
 use std::cmp::min;
 
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
+const NULL: u8 = b'\0';
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -171,8 +172,6 @@ impl Header {
         Ok(header)
     }
 }
-
-const NULL: u8 = b'\0';
 
 pub struct Body<R: Read> {
     reader: R,
