@@ -10,7 +10,6 @@ use std::io::BufWriter;
 use std::str;
 use std::fmt;
 use std::str::FromStr;
-use io::{DelimitedReader};
 use std::cmp::min;
 
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
@@ -61,7 +60,7 @@ impl fmt::Display for Command {
     }
 }
 
-impl str::FromStr for Command {
+impl FromStr for Command {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Command, String> {
@@ -142,7 +141,7 @@ impl Header {
         let mut header = Self::new();
 
         loop {
-            let mut delimited_reader = DelimitedReader::new(&mut limited_reader, b'\n');
+            let mut delimited_reader = io::DelimitedReader::new(&mut limited_reader, b'\n');
             let mut buffer: Vec<u8> = Vec::new();
             let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
 
@@ -280,7 +279,7 @@ impl<R: Read> Frame<R> {
 
     fn read_command(r: R) -> Result<Command, ReadError> {
         let mut command_reader = r.take(1024);
-        let mut command_line_reader = DelimitedReader::new(&mut command_reader, b'\n');
+        let mut command_line_reader = io::DelimitedReader::new(&mut command_reader, b'\n');
         let mut command_buffer: Vec<u8> = Vec::new();
         let cmd_bytes_read = Read::read_to_end(&mut command_line_reader, &mut command_buffer)?;
 
@@ -297,7 +296,7 @@ impl<R: Read> Frame<R> {
     }
 
     pub fn read_from(mut reader: R) -> Result<Self, ReadError> {
-        let mut null_terminated_reader = DelimitedReader::new(&mut reader, NULL);
+        let mut null_terminated_reader = io::DelimitedReader::new(&mut reader, NULL);
         let command = Frame::read_command(&mut null_terminated_reader)?;
         let header = Header::read_from(&mut null_terminated_reader)?;
         let frame = Frame::with_header(command, header, reader);
