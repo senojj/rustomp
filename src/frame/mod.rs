@@ -4,7 +4,7 @@ mod string;
 
 use error::ReadError;
 use std::collections::BTreeMap;
-use std::io::{Write, Read};
+use std::io::{Write, Read, Cursor};
 use std::io as stdio;
 use std::io::BufWriter;
 use std::str;
@@ -100,18 +100,18 @@ impl Header {
         }
     }
 
-    pub fn get<T: Into<String>>(&self, key: T) -> Option<&Vec<String>> {
+    pub fn get_field<T: Into<String>>(&self, key: T) -> Option<&Vec<String>> {
         self.fields.get(&key.into())
     }
 
-    pub fn add<T: Into<String>>(&mut self, key: T, value: T) {
+    pub fn add_field<T: Into<String>>(&mut self, key: T, value: T) {
         self.fields
             .entry(key.into())
             .or_insert_with(|| Vec::with_capacity(1))
             .push(value.into());
     }
 
-    pub fn set<T: Into<String>>(&mut self, key: T, values: Vec<String>) {
+    pub fn set_field<T: Into<String>>(&mut self, key: T, values: Vec<String>) {
         let mut c = Vec::with_capacity(values.len());
 
         for v in values {
@@ -121,7 +121,7 @@ impl Header {
         self.fields.insert(key.into(), c);
     }
 
-    pub fn remove(&mut self, key: &str) {
+    pub fn remove_field(&mut self, key: &str) {
         self.fields.remove(key);
     }
 
@@ -167,7 +167,7 @@ impl Header {
             if clean_field_name.is_empty() {
                 return Err(ReadError::Format(String::from("empty header field name")));
             }
-            header.add(clean_field_name, clean_field_value);
+            header.add_field(clean_field_name, clean_field_value);
         }
         Ok(header)
     }
@@ -188,7 +188,7 @@ impl<R: Read> Body<R> {
         }
     }
 
-    fn new_with_length(reader: R, content_length: u64) -> Self {
+    fn with_length(reader: R, content_length: u64) -> Self {
         Body {
             reader,
             content_length,
@@ -250,11 +250,11 @@ impl<R: Read> Frame<R> {
         }
     }
 
-    fn new_with_header(command: Command, header: Header, body: R) -> Self {
-        let value = header.get("Content-Length").map(|v| v.first()).unwrap_or(None);
+    fn with_header(command: Command, header: Header, body: R) -> Self {
+        let value = header.get_field("Content-Length").map(|v| v.first()).unwrap_or(None);
 
         let content = match value {
-            Some(n) => Body::new_with_length(body, n.parse::<u64>().unwrap()),
+            Some(n) => Body::with_length(body, n.parse::<u64>().unwrap()),
             None => Body::new(body),
         };
 
@@ -300,7 +300,7 @@ impl<R: Read> Frame<R> {
         let mut null_terminated_reader = DelimitedReader::new(&mut reader, NULL);
         let command = Frame::read_command(&mut null_terminated_reader)?;
         let header = Header::read_from(&mut null_terminated_reader)?;
-        let frame = Frame::new_with_header(command, header, reader);
+        let frame = Frame::with_header(command, header, reader);
         Ok(frame)
     }
 }
@@ -317,9 +317,9 @@ mod test {
         let header = Header::read_from(&mut reader).unwrap();
 
         let mut target = Header::new();
-        target.add("Content-Type", "application/json");
-        target.add("Content-Length", "30");
-        target.add("Name", "Joshua");
+        target.add_field("Content-Type", "application/json");
+        target.add_field("Content-Length", "30");
+        target.add_field("Name", "Joshua");
         assert_eq!(target, header);
     }
 
@@ -328,8 +328,8 @@ mod test {
         let target = "Content-Length: 30\nContent-Type: application/json\n";
 
         let mut header = Header::new();
-        header.add("Content-Type", "application/json");
-        header.add("Content-Length", "30");
+        header.add_field("Content-Type", "application/json");
+        header.add_field("Content-Length", "30");
 
         let mut buffer: Vec<u8> = Vec::new();
         header.write_to(&mut buffer).unwrap();
@@ -342,8 +342,8 @@ mod test {
         let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
 
         let mut header = Header::new();
-        header.add("Content-Type", "vnd:application/json");
-        header.add("Content-Length", "30");
+        header.add_field("Content-Type", "vnd:application/json");
+        header.add_field("Content-Length", "30");
 
         let mut buffer: Vec<u8> = Vec::new();
         header.write_to(&mut buffer).unwrap();
@@ -356,8 +356,8 @@ mod test {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n\0";
         let mut input = stdio::empty();
         let mut frame = Frame::new(Command::Connect, &mut input);
-        frame.header.add("Content-Type", "application/json");
-        frame.header.add("Content-Length", "30");
+        frame.header.add_field("Content-Type", "application/json");
+        frame.header.add_field("Content-Length", "30");
 
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
@@ -370,8 +370,8 @@ mod test {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0";
         let mut input = Cursor::new(b"{\"name\":\"Joshua\"}");
         let mut frame = Frame::new(Command::Connect, &mut input);
-        frame.header.add("Content-Type", "application/json");
-        frame.header.add("Content-Length", "30");
+        frame.header.add_field("Content-Type", "application/json");
+        frame.header.add_field("Content-Length", "30");
 
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
@@ -386,8 +386,8 @@ mod test {
         let mut frame = Frame::read_from(&mut reader).unwrap();
 
         let mut target_header = Header::new();
-        target_header.add("Content-Type", "application/json");
-        target_header.add("Content-Length", "17");
+        target_header.add_field("Content-Type", "application/json");
+        target_header.add_field("Content-Length", "17");
 
         let target_body = b"{\"name\":\"Joshua\"}".to_vec();
 
@@ -406,7 +406,7 @@ mod test {
         let mut frame = Frame::read_from(&mut reader).unwrap();
 
         let mut target_header = Header::new();
-        target_header.add("Content-Type", "application/json");
+        target_header.add_field("Content-Type", "application/json");
 
         let target_body = b"{\"name\":\"Joshua\"}".to_vec();
 
