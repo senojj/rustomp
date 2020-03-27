@@ -4,13 +4,13 @@ mod string;
 
 use error::ReadError;
 use std::collections::BTreeMap;
-use std::io::{Write, Read, Cursor};
+use std::io::{Write, Read};
 use std::io as stdio;
 use std::io::BufWriter;
 use std::str;
 use std::fmt;
 use std::str::FromStr;
-use crate::frame::io::{DelimitedReader};
+use io::{DelimitedReader};
 use std::cmp::min;
 
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
