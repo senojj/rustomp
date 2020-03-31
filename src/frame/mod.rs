@@ -99,8 +99,8 @@ impl Header {
         }
     }
 
-    pub fn get_field<T: Into<String>>(&self, key: T) -> Option<&Vec<String>> {
-        self.fields.get(&key.into())
+    pub fn get_field(&self, key: &str) -> Option<&Vec<String>> {
+        self.fields.get(key)
     }
 
     pub fn add_field<T: Into<String>>(&mut self, key: T, value: T) {
