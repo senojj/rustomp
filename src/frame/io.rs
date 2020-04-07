@@ -68,7 +68,7 @@ impl<R: Read> Read for DelimitedReader<R> {
                 Some(v) => {
                     buf[ndx] = v;
                     ndx += 1;
-                    total_read += bytes_read;
+                    total_read += 1;
                 },
                 None => (),
             };
