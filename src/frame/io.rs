@@ -62,7 +62,7 @@ impl<R: Read> Read for DelimitedReader<R> {
                         let mut temp_vec = Vec::from(tail);
                         new_vec.append(&mut temp_vec);
                         self.search_window = new_vec;
-                    },
+                    }
                     None => (),
                 };
             }
