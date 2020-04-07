@@ -304,6 +304,12 @@ impl<R: Read> Frame<R> {
     }
 }
 
+impl<R: Read> Drop for Frame<R> {
+    fn drop(&mut self) {
+        self.body.close().unwrap();
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
