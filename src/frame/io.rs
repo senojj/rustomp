@@ -47,7 +47,6 @@ impl<R: Read> Read for DelimitedReader<R> {
                     return Ok(total_read);
                 }
             }
-            let mut popped_value: Option<u8> = None;
 
             if self.search_window.capacity() == self.search_window.len() {
                 let split_result = self.search_window.split_first();
