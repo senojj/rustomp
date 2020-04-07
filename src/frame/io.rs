@@ -44,9 +44,9 @@ impl<R: Read> Read for DelimitedReader<R> {
             if bytes_read > 0 {
                 self.search_window.push_back(inner_buffer[0]);
 
-                let slices = self.search_window.as_slices();
+                let (front, back) = self.search_window.as_slices();
 
-                if [slices.0, slices.1].concat() == delimiter_bytes {
+                if [front, back].concat() == delimiter_bytes {
                     self.done = true;
                     return Ok(total_read);
                 }
