@@ -59,8 +59,7 @@ impl<R: Read> Read for DelimitedReader<R> {
                         total_read += 1;
 
                         let mut new_vec: Vec<u8> = Vec::with_capacity(delimiter_bytes.len());
-                        let mut temp_vec = Vec::from(tail);
-                        new_vec.append(&mut temp_vec);
+                        new_vec.extend_from_slice(tail);
                         self.search_window = new_vec;
                     }
                     None => (),
