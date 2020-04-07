@@ -54,24 +54,18 @@ impl<R: Read> Read for DelimitedReader<R> {
 
                 match split_result {
                     Some(split) => {
-                        popped_value = Some(*split.0);
+                        buf[ndx] = *split.0;
+                        ndx += 1;
+                        total_read += 1;
+
                         let mut new_vec: Vec<u8> = Vec::with_capacity(delimiter_bytes.len());
                         let mut temp_vec = Vec::from(split.1);
                         new_vec.append(&mut temp_vec);
                         self.search_window = new_vec;
                     },
-                    None => popped_value = None,
+                    None => (),
                 };
             }
-
-            match popped_value {
-                Some(v) => {
-                    buf[ndx] = v;
-                    ndx += 1;
-                    total_read += 1;
-                },
-                None => (),
-            };
             ctr += 1;
         }
         Ok(total_read)
