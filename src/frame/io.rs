@@ -1,12 +1,13 @@
 use std::io;
 use std::io::Read;
+use std::collections::VecDeque;
 
 const NULL: u8 = b'\0';
 
 pub struct DelimitedReader<R: Read> {
     reader: R,
     delimiter: String,
-    search_window: Vec<u8>,
+    search_window: VecDeque<u8>,
     done: bool,
 }
 
@@ -18,7 +19,7 @@ impl<R: Read> DelimitedReader<R> {
         DelimitedReader {
             reader,
             delimiter: delim,
-            search_window: Vec::with_capacity(byte_length),
+            search_window: VecDeque::with_capacity(byte_length),
             done: false,
         }
     }
@@ -41,26 +42,22 @@ impl<R: Read> Read for DelimitedReader<R> {
             let bytes_read = self.reader.read(&mut inner_buffer)?;
 
             if bytes_read > 0 {
-                self.search_window.push(inner_buffer[0]);
+                self.search_window.push_back(inner_buffer[0]);
 
-                if self.search_window == delimiter_bytes {
+                let slices = self.search_window.as_slices();
+
+                if [slices.0, slices.1].concat() == delimiter_bytes {
                     self.done = true;
                     return Ok(total_read);
                 }
             }
 
             if self.search_window.capacity() == self.search_window.len() {
-                let split_result = self.search_window.split_first();
-
-                match split_result {
-                    Some((head, tail)) => {
-                        buf[ndx] = *head;
+                match self.search_window.pop_front() {
+                    Some(head) => {
+                        buf[ndx] = head;
                         ndx += 1;
                         total_read += 1;
-
-                        let mut new_vec: Vec<u8> = Vec::with_capacity(delimiter_bytes.len());
-                        new_vec.extend_from_slice(tail);
-                        self.search_window = new_vec;
                     }
                     None => (),
                 };
