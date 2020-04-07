@@ -53,13 +53,13 @@ impl<R: Read> Read for DelimitedReader<R> {
                 let split_result = self.search_window.split_first();
 
                 match split_result {
-                    Some(split) => {
-                        buf[ndx] = *split.0;
+                    Some((head, tail)) => {
+                        buf[ndx] = *head;
                         ndx += 1;
                         total_read += 1;
 
                         let mut new_vec: Vec<u8> = Vec::with_capacity(delimiter_bytes.len());
-                        let mut temp_vec = Vec::from(split.1);
+                        let mut temp_vec = Vec::from(tail);
                         new_vec.append(&mut temp_vec);
                         self.search_window = new_vec;
                     },
