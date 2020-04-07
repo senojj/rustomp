@@ -53,14 +53,11 @@ impl<R: Read> Read for DelimitedReader<R> {
             }
 
             if self.search_window.capacity() == self.search_window.len() {
-                match self.search_window.pop_front() {
-                    Some(head) => {
-                        buf[ndx] = head;
-                        ndx += 1;
-                        total_read += 1;
-                    }
-                    None => (),
-                };
+                if let Some(head) = self.search_window.pop_front() {
+                    buf[ndx] = head;
+                    ndx += 1;
+                    total_read += 1;
+                }
             }
             ctr += 1;
         }
