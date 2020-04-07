@@ -1,6 +1,7 @@
 use std::io;
 use std::io::Read;
-use crate::frame::NULL;
+
+const NULL: u8 = b'\0';
 
 pub struct DelimitedReader<R: Read> {
     reader: R,
