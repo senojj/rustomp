@@ -106,10 +106,10 @@ mod test {
 
     #[test]
     fn delimited_reader_beginning() {
-        let input = b";this is a test";
+        let input = b"term this is a test";
         let mut reader = Cursor::new(input);
 
-        let mut dreader = DelimitedReader::new(&mut reader, ";");
+        let mut dreader = DelimitedReader::new(&mut reader, "term");
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
