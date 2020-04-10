@@ -22,30 +22,23 @@ impl<R: BufRead> Read for DelimitedReader<R> {
         if self.done {
             return Ok(0);
         }
-        loop {
-            let (found, used) = {
-                let mut available = match self.inner.fill_buf() {
-                    Ok(n) => n,
-                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(e) => return Err(e),
-                };
-                match memchr::memchr(self.delim, available) {
-                    Some(i) => {
-                        self.done = true;
-                        (true, (&available[..i]).read(buf)? + 1)
-                    }
-                    None => {
-                        (false, available.read(buf)?)
-                    }
-                }
-            };
-            self.inner.consume(used);
+        let mut available = self.inner.fill_buf()?;
 
-            if found {
-                return Ok(used - 1);
+        let (found, used) = match memchr::memchr(self.delim, available) {
+            Some(i) => {
+                self.done = true;
+                (true, (&available[..i]).read(buf)? + 1)
             }
-            return Ok(used);
+            None => {
+                (false, available.read(buf)?)
+            }
+        };
+        self.inner.consume(used);
+
+        if found {
+            return Ok(used - 1);
         }
+        return Ok(used);
     }
 }
 

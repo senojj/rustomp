@@ -10,8 +10,8 @@ use std::io::BufWriter;
 use std::str;
 use std::fmt;
 use std::str::FromStr;
-use std::cmp::min;
 
+const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 const NULL: u8 = b'\0';
 
@@ -172,95 +172,86 @@ impl Header {
     }
 }
 
-pub struct Body<R: Read> {
-    reader: R,
-    content_length: u64,
+pub struct Body<'a> {
+    inner: &'a mut dyn BufRead,
+    limit: u64,
     done: bool,
 }
 
-impl<R: Read> Body<R> {
-    fn new(reader: R) -> Self {
+impl<'a> Body<'a> {
+    fn new(reader: &'a mut dyn BufRead) -> Self {
         Body {
-            reader,
-            content_length: 0,
+            inner: reader,
+            limit: 0,
             done: false,
         }
     }
 
-    fn with_length(reader: R, content_length: u64) -> Self {
+    fn with_length(reader: &'a mut dyn BufRead, content_length: u64) -> Self {
         Body {
-            reader,
-            content_length,
+            inner: reader,
+            limit: content_length,
             done: false,
         }
     }
 
     pub fn close(&mut self) -> stdio::Result<()> {
-        stdio::copy(&mut self.reader, &mut stdio::sink()).map(|_| ())
+        stdio::copy(&mut self.inner, &mut stdio::sink()).map(|_| ())
     }
 }
 
-impl<R: Read> Read for Body<R> {
+impl<'a> Read for Body<'a> {
     fn read(&mut self, buf: &mut [u8]) -> stdio::Result<usize> {
         if self.done {
             return Ok(0);
         }
 
-        if self.content_length == 0 {
-            let mut total_read: usize = 0;
-            let mut inner_buffer: [u8; 1] = [NULL];
-
-            let mut ctr = 0;
-
-            while ctr < buf.len() {
-                let bytes_read = self.reader.read(&mut inner_buffer)?;
-
-                if bytes_read > 0 {
-                    if inner_buffer[0] == NULL {
-                        self.done = true;
-                        return Ok(total_read);
-                    }
-                    total_read += bytes_read;
-                    buf[ctr] = inner_buffer[0];
-                }
-                ctr += 1;
-            }
-            return Ok(total_read);
+        if self.limit > 0 {
+            let max = std::cmp::min(buf.len() as u64, self.limit) as usize;
+            let read = self.inner.read(&mut buf[..max])?;
+            self.limit -= read as u64;
+            return Ok(read);
         }
-        let max = min(buf.len() as u64, self.content_length) as usize;
-        let bytes_read = self.reader.read(&mut buf[..max])?;
-        self.content_length -= bytes_read as u64;
-        Ok(bytes_read)
+        let mut available = self.inner.fill_buf()?;
+
+        let (found, used) = match memchr::memchr(NULL, available) {
+            Some(i) => {
+                self.done = true;
+                (true, (&available[..i]).read(buf)? + 1)
+            }
+            None => {
+                (false, available.read(buf)?)
+            }
+        };
+        self.inner.consume(used);
+
+        if found {
+            return Ok(used - 1);
+        }
+        return Ok(used);
     }
 }
 
-pub struct Frame<R: BufRead> {
+pub struct Frame<'a> {
     pub command: Command,
     pub header: Header,
-    pub body: Body<R>,
+    pub body: Body<'a>,
 }
 
-impl<R: BufRead> Frame<R> {
-    pub fn new(command: Command, body: R) -> Self {
+impl<'a> Frame<'a> {
+    pub fn new(command: Command, body: Body<'a>) -> Self {
         Frame {
             command,
             header: Header::new(),
-            body: Body::new(body),
+            body,
         }
     }
 
-    fn with_header(command: Command, header: Header, body: R) -> Self {
-        let value = header.get_field("Content-Length").map(|v| v.first()).unwrap_or(None);
-
-        let content = match value {
-            Some(n) => Body::with_length(body, n.parse::<u64>().unwrap()),
-            None => Body::new(body),
-        };
-
+    fn with_header(command: Command, header: Header, body: Body<'a>) -> Self {
         Frame {
             command,
             header,
-            body: content,
+            body,
         }
     }
 
@@ -277,8 +268,8 @@ impl<R: BufRead> Frame<R> {
         bw.flush().and(Ok(bytes_written))
     }
 
-    fn read_command(r: R) -> Result<Command, ReadError> {
-        let mut command_reader = r.take(1024);
+    fn read_command<R: BufRead>(r: R) -> Result<Command, ReadError> {
+        let mut command_reader = r.take(MAX_COMMAND_SIZE);
         let mut command_line_reader = io::DelimitedReader::new(&mut command_reader, b'\n');
         let mut command_buffer: Vec<u8> = Vec::new();
         let cmd_bytes_read = Read::read_to_end(&mut command_line_reader, &mut command_buffer)?;
@@ -295,15 +286,22 @@ impl<R: BufRead> Frame<R> {
         Command::from_str(clean_string_command).map_err(ReadError::Format)
     }
 
-    pub fn read_from(mut reader: R) -> Result<Self, ReadError> {
+    pub fn read_from<R: BufRead>(mut reader: &'a mut R) -> Result<Self, ReadError> {
         let command = Frame::read_command(&mut reader)?;
         let header = Header::read_from(&mut reader)?;
-        let frame = Frame::with_header(command, header, reader);
+
+        let clen = header.get_field("Content-Length").map(|v| v.first()).unwrap_or(None);
+
+        let body = match clen {
+            Some(n) => Body::with_length(reader, n.parse::<u64>().unwrap()),
+            None => Body::new(reader),
+        };
+        let frame = Frame::with_header(command, header, body);
         Ok(frame)
     }
 }
 
-impl<R: BufRead> Drop for Frame<R> {
+impl<'a> Drop for Frame<'a> {
     fn drop(&mut self) {
         self.body.close().unwrap();
     }
@@ -359,7 +357,7 @@ mod test {
     fn write_frame() {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n\0";
         let mut input = stdio::empty();
-        let mut frame = Frame::new(Command::Connect, &mut input);
+        let mut frame = Frame::new(Command::Connect, Body::with_length(&mut input, 30));
         frame.header.add_field("Content-Type", "application/json");
         frame.header.add_field("Content-Length", "30");
 
@@ -373,7 +371,7 @@ mod test {
     fn write_frame_with_body() {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0";
         let mut input = Cursor::new(b"{\"name\":\"Joshua\"}");
-        let mut frame = Frame::new(Command::Connect, &mut input);
+        let mut frame = Frame::new(Command::Connect, Body::with_length(&mut input, 30));
         frame.header.add_field("Content-Type", "application/json");
         frame.header.add_field("Content-Length", "30");
 
