@@ -1,46 +1,51 @@
 use std::io;
-use std::io::Read;
+use std::io::{Read, BufRead};
 
-pub struct DelimitedReader<R: Read> {
-    reader: R,
-    delimiter: u8,
+pub struct DelimitedReader<R: BufRead> {
+    inner: R,
+    delim: u8,
     done: bool,
 }
 
-impl<R: Read> DelimitedReader<R> {
+impl<R: BufRead> DelimitedReader<R> {
     pub fn new(reader: R, delimiter: u8) -> Self {
         DelimitedReader {
-            reader,
-            delimiter,
+            inner: reader,
+            delim: delimiter,
             done: false,
         }
     }
 }
 
-impl<R: Read> Read for DelimitedReader<R> {
+impl<R: BufRead> Read for DelimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.done {
             return Ok(0);
         }
-        let mut total_read: usize = 0;
-        let mut inner_buffer: [u8; 1] = [b'\0'];
-
-        let mut ctr = 0;
-
-        while ctr < buf.len() {
-            let bytes_read = self.reader.read(&mut inner_buffer)?;
-
-            if bytes_read > 0 {
-                if inner_buffer[0] == self.delimiter {
-                    self.done = true;
-                    return Ok(total_read);
+        loop {
+            let (found, used) = {
+                let mut available = match self.inner.fill_buf() {
+                    Ok(n) => n,
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                };
+                match memchr::memchr(self.delim, available) {
+                    Some(i) => {
+                        self.done = true;
+                        (true, (&available[..i]).read(buf)? + 1)
+                    }
+                    None => {
+                        (false, available.read(buf)?)
+                    }
                 }
-                total_read += bytes_read;
-                buf[ctr] = inner_buffer[0];
+            };
+            self.inner.consume(used);
+
+            if found {
+                return Ok(used - 1);
             }
-            ctr += 1;
+            return Ok(used);
         }
-        Ok(total_read)
     }
 }
 

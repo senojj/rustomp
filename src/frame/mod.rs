@@ -4,7 +4,7 @@ mod string;
 
 use error::ReadError;
 use std::collections::BTreeMap;
-use std::io::{Write, Read};
+use std::io::{Write, Read, BufRead};
 use std::io as stdio;
 use std::io::BufWriter;
 use std::str;
@@ -136,7 +136,7 @@ impl Header {
         bw.flush().and(Ok(bytes_written))
     }
 
-    fn read_from<R: Read>(reader: R) -> Result<Self, ReadError> {
+    fn read_from<R: BufRead>(reader: R) -> Result<Self, ReadError> {
         let mut limited_reader = reader.take(MAX_HEADER_SIZE);
         let mut header = Self::new();
 
@@ -234,13 +234,13 @@ impl<R: Read> Read for Body<R> {
     }
 }
 
-pub struct Frame<R: Read> {
+pub struct Frame<R: BufRead> {
     pub command: Command,
     pub header: Header,
     pub body: Body<R>,
 }
 
-impl<R: Read> Frame<R> {
+impl<R: BufRead> Frame<R> {
     pub fn new(command: Command, body: R) -> Self {
         Frame {
             command,
@@ -296,15 +296,14 @@ impl<R: Read> Frame<R> {
     }
 
     pub fn read_from(mut reader: R) -> Result<Self, ReadError> {
-        let mut null_terminated_reader = io::DelimitedReader::new(&mut reader, NULL);
-        let command = Frame::read_command(&mut null_terminated_reader)?;
-        let header = Header::read_from(&mut null_terminated_reader)?;
+        let command = Frame::read_command(&mut reader)?;
+        let header = Header::read_from(&mut reader)?;
         let frame = Frame::with_header(command, header, reader);
         Ok(frame)
     }
 }
 
-impl<R: Read> Drop for Frame<R> {
+impl<R: BufRead> Drop for Frame<R> {
     fn drop(&mut self) {
         self.body.close().unwrap();
     }
