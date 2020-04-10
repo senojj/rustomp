@@ -179,7 +179,7 @@ pub struct Body<'a> {
 }
 
 impl<'a> Body<'a> {
-    fn new(reader: &'a mut dyn BufRead) -> Self {
+    fn new<R: BufRead>(reader: &'a mut R) -> Self {
         Body {
             inner: reader,
             limit: 0,
@@ -187,7 +187,7 @@ impl<'a> Body<'a> {
         }
     }
 
-    fn with_length(reader: &'a mut dyn BufRead, content_length: u64) -> Self {
+    fn with_length<R: BufRead>(reader: &'a mut R, content_length: u64) -> Self {
         Body {
             inner: reader,
             limit: content_length,
