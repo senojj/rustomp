@@ -10,6 +10,7 @@ use std::io::BufWriter;
 use std::str;
 use std::fmt;
 use std::str::FromStr;
+use io::DelimitedReader;
 
 const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
@@ -142,7 +143,7 @@ impl Header {
         let mut header = Self::new();
 
         loop {
-            let mut delimited_reader = io::DelimitedReader::new(&mut limited_reader, EOL);
+            let mut delimited_reader = DelimitedReader::new(&mut limited_reader, EOL);
             let mut buffer: Vec<u8> = Vec::new();
             let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
 
@@ -271,7 +272,7 @@ impl<'a> Frame<'a> {
 
     fn read_command<R: BufRead>(r: R) -> Result<Command, ReadError> {
         let mut command_reader = r.take(MAX_COMMAND_SIZE);
-        let mut command_line_reader = io::DelimitedReader::new(&mut command_reader, EOL);
+        let mut command_line_reader = DelimitedReader::new(&mut command_reader, EOL);
         let mut command_buffer: Vec<u8> = Vec::new();
         let cmd_bytes_read = Read::read_to_end(&mut command_line_reader, &mut command_buffer)?;
 
