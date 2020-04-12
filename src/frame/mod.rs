@@ -14,6 +14,7 @@ use std::str::FromStr;
 const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 const NULL: u8 = b'\0';
+const EOL: u8 = b'\n';
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -141,7 +142,7 @@ impl Header {
         let mut header = Self::new();
 
         loop {
-            let mut delimited_reader = io::DelimitedReader::new(&mut limited_reader, b'\n');
+            let mut delimited_reader = io::DelimitedReader::new(&mut limited_reader, EOL);
             let mut buffer: Vec<u8> = Vec::new();
             let bytes_read = Read::read_to_end(&mut delimited_reader, &mut buffer)?;
 
@@ -259,18 +260,18 @@ impl<'a> Frame<'a> {
         let mut bw = BufWriter::new(w);
         let mut bytes_written: u64 = 0;
         bytes_written += bw.write(self.command.to_string().as_bytes())? as u64;
-        bytes_written += bw.write(b"\n")? as u64;
+        bytes_written += bw.write(&[EOL])? as u64;
         bytes_written += self.header.write_to(&mut bw)?;
-        bytes_written += bw.write(b"\n")? as u64;
+        bytes_written += bw.write(&[EOL])? as u64;
         bytes_written += stdio::copy(&mut self.body, &mut bw)?;
-        bytes_written += bw.write(b"\0")? as u64;
+        bytes_written += bw.write(&[NULL])? as u64;
 
         bw.flush().and(Ok(bytes_written))
     }
 
     fn read_command<R: BufRead>(r: R) -> Result<Command, ReadError> {
         let mut command_reader = r.take(MAX_COMMAND_SIZE);
-        let mut command_line_reader = io::DelimitedReader::new(&mut command_reader, b'\n');
+        let mut command_line_reader = io::DelimitedReader::new(&mut command_reader, EOL);
         let mut command_buffer: Vec<u8> = Vec::new();
         let cmd_bytes_read = Read::read_to_end(&mut command_line_reader, &mut command_buffer)?;
 
