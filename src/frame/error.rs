@@ -15,9 +15,9 @@ impl fmt::Display for ReadError {
         use self::ReadError::*;
 
         match self {
-            IO(err) => err.fmt(f),
-            Encoding(err) => err.fmt(f),
-            Format(string) => string.fmt(f),
+            IO(e) => e.fmt(f),
+            Encoding(e) => e.fmt(f),
+            Format(s) => s.fmt(f),
         }
     }
 }
@@ -27,8 +27,8 @@ impl error::Error for ReadError {
         use self::ReadError::*;
 
         match self {
-            IO(err) => Some(err),
-            Encoding(err) => Some(err),
+            IO(e) => Some(e),
+            Encoding(e) => Some(e),
             Format(_) => None,
         }
     }
