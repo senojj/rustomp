@@ -3,14 +3,14 @@ mod io;
 mod string;
 
 use error::ReadError;
+use io::DelimitedReader;
 use std::collections::BTreeMap;
-use std::io::{Write, Read, BufRead};
+use std::fmt;
 use std::io as stdio;
 use std::io::BufWriter;
+use std::io::{BufRead, Read, Write};
 use std::str;
-use std::fmt;
 use std::str::FromStr;
-use io::DelimitedReader;
 
 const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
@@ -126,20 +126,19 @@ impl Header {
         self.fields.remove(key);
     }
 
-    pub fn write_to<W: Write>(&self, w: W) -> stdio::Result<u64> {
-        let mut bw = BufWriter::new(w);
+    pub fn write_to<W: Write>(&self, mut w: W) -> stdio::Result<u64> {
         let mut bytes_written: u64 = 0;
 
         for (k, v) in self.fields.iter() {
             let field_str = format!("{}: {}\n", string::encode(k), string::encode(&v.join(",")));
-            let size = bw.write(field_str.as_bytes())?;
+            let size = w.write(field_str.as_bytes())?;
             bytes_written += size as u64;
         }
-        bw.flush().and(Ok(bytes_written))
+        Ok(bytes_written)
     }
 
-    fn read_from<R: BufRead>(reader: R) -> Result<Self, ReadError> {
-        let mut limited_reader = reader.take(MAX_HEADER_SIZE);
+    fn read_from<R: Read>(reader: R) -> Result<Self, ReadError> {
+        let mut limited_reader = io::LimitedReader::new(reader, MAX_HEADER_SIZE);
         let mut header = Self::new();
 
         loop {
@@ -155,9 +154,10 @@ impl Header {
             let parts: Vec<&str> = clean_line.split(':').collect();
 
             if parts.len() < 2 {
-                return Err(ReadError::Format(
-                    format!("invalid number of header field parts. Expected 2, got {}", parts.len())
-                ));
+                return Err(ReadError::Format(format!(
+                    "invalid number of header field parts. Expected 2, got {}",
+                    parts.len()
+                )));
             }
             let field_name = string::decode(parts[0]);
             let field_value = string::decode(parts[1]);
@@ -221,9 +221,7 @@ impl<'a> Read for Body<'a> {
                 self.done = true;
                 (true, (&available[..i]).read(buf)? + 1)
             }
-            None => {
-                (false, available.read(buf)?)
-            }
+            None => (false, available.read(buf)?),
         };
         self.inner.consume(used);
 
@@ -292,7 +290,10 @@ impl<'a> Frame<'a> {
         let command = Frame::read_command(&mut reader)?;
         let header = Header::read_from(&mut reader)?;
 
-        let clen = header.get_field("Content-Length").map(|v| v.first()).unwrap_or(None);
+        let clen = header
+            .get_field("Content-Length")
+            .map(|v| v.first())
+            .unwrap_or(None);
 
         let body = match clen {
             Some(n) => Body::with_length(reader, n.parse::<u64>().unwrap()),

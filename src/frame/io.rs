@@ -1,13 +1,44 @@
 use std::io;
-use std::io::{Read, BufRead};
+use std::io::Read;
 
-pub struct DelimitedReader<R: BufRead> {
+pub struct LimitedReader<R: Read> {
+    reader: R,
+    limit: u64,
+}
+
+impl<R: Read> LimitedReader<R> {
+    pub fn new(reader: R, limit: u64) -> Self {
+        LimitedReader { reader, limit }
+    }
+}
+
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.limit <= 0 {
+            return Ok(0);
+        }
+
+        let local_buf = if (buf.len() as u64) > self.limit {
+            &mut buf[..self.limit as usize]
+        } else {
+            buf
+        };
+        let result = self.reader.read(local_buf);
+        match result {
+            Ok(v) => self.limit -= v as u64,
+            _ => (),
+        }
+        return result;
+    }
+}
+
+pub struct DelimitedReader<R: Read> {
     inner: R,
     delim: u8,
     done: bool,
 }
 
-impl<R: BufRead> DelimitedReader<R> {
+impl<R: Read> DelimitedReader<R> {
     pub fn new(reader: R, delimiter: u8) -> Self {
         DelimitedReader {
             inner: reader,
@@ -17,36 +48,37 @@ impl<R: BufRead> DelimitedReader<R> {
     }
 }
 
-impl<R: BufRead> Read for DelimitedReader<R> {
+impl<R: Read> Read for DelimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.done {
             return Ok(0);
         }
-        let mut available = self.inner.fill_buf()?;
+        let mut local_buf: [u8; 1] = [0];
+        let mut total_bytes_read = 0;
 
-        let (found, used) = match memchr::memchr(self.delim, available) {
-            Some(i) => {
-                self.done = true;
-                (true, (&available[..i]).read(buf)? + 1)
+        for x in 0..buf.len() {
+            let bytes_read = self.inner.read(&mut local_buf)?;
+            if bytes_read > 0 {
+                if local_buf[0] == self.delim {
+                    self.done = true;
+                    return Ok(total_bytes_read);
+                } else {
+                    buf[x] = local_buf[0];
+                }
+            } else {
+                break;
             }
-            None => {
-                (false, available.read(buf)?)
-            }
-        };
-        self.inner.consume(used);
-
-        if found {
-            return Ok(used - 1);
+            total_bytes_read += bytes_read;
         }
-        return Ok(used);
+        Ok(total_bytes_read)
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::str;
     use std::io::Cursor;
+    use std::str;
 
     #[test]
     fn delimited_reader_middle() {
