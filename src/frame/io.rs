@@ -1,20 +1,21 @@
+use std::cell::RefMut;
 use std::io;
 use std::io::Read;
 
-pub struct LimitedReader<R: Read> {
-    reader: R,
+pub struct LimitedReader<'a, R: Read> {
+    reader: RefMut<'a, R>,
     limit: u64,
 }
 
-impl<R: Read> LimitedReader<R> {
-    pub fn new(reader: R, limit: u64) -> Self {
+impl<'a, R: Read> LimitedReader<'a, R> {
+    pub fn new(reader: RefMut<'a, R>, limit: u64) -> Self {
         LimitedReader { reader, limit }
     }
 }
 
-impl<R: Read> Read for LimitedReader<R> {
+impl<'a, R: Read> Read for LimitedReader<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.limit <= 0 {
+        if self.limit == 0 {
             return Ok(0);
         }
 
@@ -32,14 +33,14 @@ impl<R: Read> Read for LimitedReader<R> {
     }
 }
 
-pub struct DelimitedReader<R: Read> {
-    inner: R,
+pub struct DelimitedReader<'a, R: Read> {
+    inner: RefMut<'a, R>,
     delim: u8,
     done: bool,
 }
 
-impl<R: Read> DelimitedReader<R> {
-    pub fn new(reader: R, delimiter: u8) -> Self {
+impl<'a, R: Read> DelimitedReader<'a, R> {
+    pub fn new(reader: RefMut<'a, R>, delimiter: u8) -> Self {
         DelimitedReader {
             inner: reader,
             delim: delimiter,
@@ -48,7 +49,7 @@ impl<R: Read> DelimitedReader<R> {
     }
 }
 
-impl<R: Read> Read for DelimitedReader<R> {
+impl<'a, R: Read> Read for DelimitedReader<'a, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.done {
             return Ok(0);
@@ -77,15 +78,16 @@ impl<R: Read> Read for DelimitedReader<R> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::cell::RefCell;
     use std::io::Cursor;
     use std::str;
 
     #[test]
     fn delimited_reader_middle() {
         let input = b"this is; a test";
-        let mut reader = Cursor::new(input);
-
-        let mut dreader = DelimitedReader::new(&mut reader, b';');
+        let cell = RefCell::new(Cursor::new(input));
+        let mut reader = cell.borrow_mut();
+        let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
@@ -96,9 +98,10 @@ mod test {
     #[test]
     fn delimited_reader_none() {
         let input = b"this is a test";
-        let mut reader = Cursor::new(input);
+        let cell = RefCell::new(Cursor::new(input));
+        let mut reader = cell.borrow_mut();
 
-        let mut dreader = DelimitedReader::new(&mut reader, b';');
+        let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
@@ -109,9 +112,10 @@ mod test {
     #[test]
     fn delimited_reader_beginning() {
         let input = b";this is a test";
-        let mut reader = Cursor::new(input);
+        let cell = RefCell::new(Cursor::new(input));
+        let mut reader = cell.borrow_mut();
 
-        let mut dreader = DelimitedReader::new(&mut reader, b';');
+        let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();

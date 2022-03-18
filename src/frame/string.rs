@@ -25,14 +25,18 @@ pub fn decode(input: &str) -> String {
 
     for c in input.chars() {
         match c {
-            'c' if last_char == BACKSLASH => output.push_str(":"),
-            'n' if last_char == BACKSLASH => output.push_str("\n"),
-            'r' if last_char == BACKSLASH => output.push_str("\r"),
-            BACKSLASH if last_char == BACKSLASH => output.push_str("\\"),
+            'c' if last_char == BACKSLASH => output.push(':'),
+            'n' if last_char == BACKSLASH => output.push('\n'),
+            'r' if last_char == BACKSLASH => output.push('\r'),
+            BACKSLASH if last_char == BACKSLASH => output.push('\\'),
             BACKSLASH => (),
             a => output.push(a),
         }
-        last_char = if last_char == BACKSLASH && c == BACKSLASH { NULL } else { c }
+        last_char = if last_char == BACKSLASH && c == BACKSLASH {
+            NULL
+        } else {
+            c
+        }
     }
     output
 }
