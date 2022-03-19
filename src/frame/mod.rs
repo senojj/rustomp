@@ -140,14 +140,13 @@ impl Header {
         Ok(bytes_written)
     }
 
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self, ReadError> {
+    fn read_from<R: Read>(reader: &mut BufReader<R>) -> Result<Self, ReadError> {
         let mut limited_reader = reader.take(MAX_HEADER_SIZE);
         let mut header = Self::new();
 
         loop {
-            let mut buf_reader = BufReader::new(&mut limited_reader);
             let mut buffer: Vec<u8> = Vec::new();
-            let bytes_read = buf_reader.read_until(EOL, &mut buffer)?;
+            let bytes_read = limited_reader.read_until(EOL, &mut buffer)?;
 
             if bytes_read < 1 {
                 break;
@@ -167,7 +166,11 @@ impl Header {
             let field_value = string::decode(parts[1]);
 
             let clean_field_name = field_name.trim().to_lowercase();
-            let clean_field_value = field_value.trim_start().to_lowercase();
+            let clean_field_value = field_value
+                .trim_start()
+                .trim_end_matches('\n')
+                .trim_end_matches('\r')
+                .to_owned();
 
             if clean_field_name.is_empty() {
                 return Err("empty header field name".into());
@@ -259,11 +262,10 @@ impl<'a> Frame<'a> {
         bw.flush().and(Ok(bytes_written))
     }
 
-    fn read_command<R: Read>(r: &mut R) -> Result<Command, ReadError> {
-        let command_reader = r.take(MAX_COMMAND_SIZE);
-        let mut buf_reader = BufReader::new(command_reader);
+    fn read_command<R: Read>(r: &mut BufReader<R>) -> Result<Command, ReadError> {
+        let mut command_reader = r.take(MAX_COMMAND_SIZE);
         let mut command_buffer: Vec<u8> = Vec::new();
-        let cmd_bytes_read = buf_reader.read_until(EOL, &mut command_buffer)?;
+        let cmd_bytes_read = command_reader.read_until(EOL, &mut command_buffer)?;
 
         if cmd_bytes_read < 1 {
             return Err("empty command".into());
@@ -285,13 +287,13 @@ impl<'a> Drop for Frame<'a> {
 }
 
 pub struct FrameReader<R: Read> {
-    reader: RefCell<R>,
+    reader: RefCell<BufReader<R>>,
 }
 
 impl<R: Read> FrameReader<R> {
     pub fn new(reader: R) -> FrameReader<R> {
         FrameReader {
-            reader: RefCell::new(reader),
+            reader: RefCell::new(BufReader::new(reader)),
         }
     }
 
@@ -327,13 +329,14 @@ mod test {
     #[test]
     fn read_header() {
         let input = b"Content-Type: application/json\r\nContent-Length: 30\r\nName: Joshua\r\n";
-        let mut reader = Cursor::new(&input[..]);
-        let header = Header::read_from(&mut reader).unwrap();
+        let reader = Cursor::new(&input[..]);
+        let mut buf_reader = BufReader::new(reader);
+        let header = Header::read_from(&mut buf_reader).unwrap();
 
         let mut target = Header::new();
-        target.add_field("Content-Type", "application/json");
-        target.add_field("Content-Length", "30");
-        target.add_field("Name", "Joshua");
+        target.add_field("content-type", "application/json");
+        target.add_field("content-length", "30");
+        target.add_field("name", "Joshua");
         assert_eq!(target, header);
     }
 

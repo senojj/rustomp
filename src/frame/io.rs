@@ -25,11 +25,11 @@ impl<'a, R: Read> Read for LimitedReader<'a, R> {
             buf
         };
         let result = self.reader.read(local_buf);
-        match result {
-            Ok(v) => self.limit -= v as u64,
-            _ => (),
+
+        if let Ok(v) = result {
+            self.limit -= v as u64
         }
-        return result;
+        result
     }
 }
 
@@ -57,14 +57,15 @@ impl<'a, R: Read> Read for DelimitedReader<'a, R> {
         let mut local_buf: [u8; 1] = [0];
         let mut total_bytes_read = 0;
 
-        for x in 0..buf.len() {
+        for x in buf {
             let bytes_read = self.inner.read(&mut local_buf)?;
+
             if bytes_read > 0 {
                 if local_buf[0] == self.delim {
                     self.done = true;
                     return Ok(total_bytes_read);
                 } else {
-                    buf[x] = local_buf[0];
+                    *x = local_buf[0];
                 }
             } else {
                 break;
@@ -86,7 +87,7 @@ mod test {
     fn delimited_reader_middle() {
         let input = b"this is; a test";
         let cell = RefCell::new(Cursor::new(input));
-        let mut reader = cell.borrow_mut();
+        let reader = cell.borrow_mut();
         let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
@@ -99,7 +100,7 @@ mod test {
     fn delimited_reader_none() {
         let input = b"this is a test";
         let cell = RefCell::new(Cursor::new(input));
-        let mut reader = cell.borrow_mut();
+        let reader = cell.borrow_mut();
 
         let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
@@ -113,7 +114,7 @@ mod test {
     fn delimited_reader_beginning() {
         let input = b";this is a test";
         let cell = RefCell::new(Cursor::new(input));
-        let mut reader = cell.borrow_mut();
+        let reader = cell.borrow_mut();
 
         let mut dreader = DelimitedReader::new(reader, b';');
         let mut buffer: Vec<u8> = Vec::new();
