@@ -2,16 +2,17 @@ mod error;
 mod io;
 mod string;
 
-use crate::frame::io::LimitedReader;
+use crate::frame::io::{BiReader, LimitedReader};
 use error::ReadError;
 use io::DelimitedReader;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io as stdio;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::io::{Read, Write};
 use std::ops::DerefMut;
+use std::rc::Rc;
 use std::str;
 use std::str::FromStr;
 
@@ -152,7 +153,7 @@ impl Header {
                 break;
             }
             let line = str::from_utf8(&buffer)?;
-            let clean_line = line.trim_end_matches('\r');
+            let clean_line = line.trim_end_matches('\r').trim_end_matches('\n');
             let parts: Vec<&str> = clean_line.split(':').collect();
 
             if parts.len() < 2 {
@@ -197,13 +198,13 @@ impl<'a> Read for Body<'a> {
     }
 }
 
-struct BodyBuilder<'a, R: Read> {
-    reference: RefMut<'a, R>,
+struct BodyBuilder<R: Read> {
+    reference: Rc<RefCell<R>>,
     content_length: Option<u64>,
 }
 
-impl<'a, R: Read> BodyBuilder<'a, R> {
-    fn new(reference: RefMut<'a, R>) -> Self {
+impl<'a, R: Read + 'a> BodyBuilder<R> {
+    fn new(reference: Rc<RefCell<R>>) -> Self {
         BodyBuilder {
             reference,
             content_length: None,
@@ -217,7 +218,9 @@ impl<'a, R: Read> BodyBuilder<'a, R> {
 
     fn build(self) -> Body<'a> {
         let reader: Box<dyn Read> = if let Some(n) = self.content_length {
-            Box::new(LimitedReader::new(self.reference, n))
+            let limited_reader = LimitedReader::new(self.reference.clone(), n);
+            let delimited_reader = DelimitedReader::new(self.reference, NULL);
+            Box::new(BiReader::new(limited_reader, delimited_reader))
         } else {
             Box::new(DelimitedReader::new(self.reference, NULL))
         };
@@ -287,13 +290,13 @@ impl<'a> Drop for Frame<'a> {
 }
 
 pub struct FrameReader<R: Read> {
-    reader: RefCell<BufReader<R>>,
+    reader: Rc<RefCell<BufReader<R>>>,
 }
 
 impl<R: Read> FrameReader<R> {
     pub fn new(reader: R) -> FrameReader<R> {
         FrameReader {
-            reader: RefCell::new(BufReader::new(reader)),
+            reader: Rc::new(RefCell::new(BufReader::new(reader))),
         }
     }
 
@@ -307,7 +310,7 @@ impl<R: Read> FrameReader<R> {
             .map(|v| v.first())
             .unwrap_or(None);
 
-        let mut body = BodyBuilder::new(reader);
+        let mut body = BodyBuilder::new(self.reader.clone());
 
         body = if let Some(n) = clen {
             body.content_length(n.parse::<u64>()?)
@@ -372,8 +375,8 @@ mod test {
     fn write_frame() {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n\0";
         let input = stdio::empty();
-        let ref_input = RefCell::new(input);
-        let mut body = BodyBuilder::new(ref_input.borrow_mut());
+        let ref_input = Rc::new(RefCell::new(input));
+        let mut body = BodyBuilder::new(ref_input);
         body = body.content_length(30);
         let mut frame = Frame::new(Command::Connect, body.build());
         frame.header.add_field("Content-Type", "application/json");
@@ -389,8 +392,8 @@ mod test {
     fn write_frame_with_body() {
         let target = "CONNECT\nContent-Length: 30\nContent-Type: application/json\n\n{\"name\":\"Joshua\"}\0";
         let input = Cursor::new(b"{\"name\":\"Joshua\"}");
-        let ref_input = RefCell::new(input);
-        let mut body = BodyBuilder::new(ref_input.borrow_mut());
+        let ref_input = Rc::new(RefCell::new(input));
+        let mut body = BodyBuilder::new(ref_input);
         body = body.content_length(30);
         let mut frame = Frame::new(Command::Connect, body.build());
         frame.header.add_field("Content-Type", "application/json");

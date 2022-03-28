@@ -1,19 +1,20 @@
-use std::cell::RefMut;
+use std::cell::RefCell;
 use std::io;
 use std::io::Read;
+use std::rc::Rc;
 
-pub struct LimitedReader<'a, R: Read> {
-    reader: RefMut<'a, R>,
+pub struct LimitedReader<R: Read> {
+    reader: Rc<RefCell<R>>,
     limit: u64,
 }
 
-impl<'a, R: Read> LimitedReader<'a, R> {
-    pub fn new(reader: RefMut<'a, R>, limit: u64) -> Self {
+impl<R: Read> LimitedReader<R> {
+    pub fn new(reader: Rc<RefCell<R>>, limit: u64) -> Self {
         LimitedReader { reader, limit }
     }
 }
 
-impl<'a, R: Read> Read for LimitedReader<'a, R> {
+impl<R: Read> Read for LimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.limit == 0 {
             return Ok(0);
@@ -24,7 +25,8 @@ impl<'a, R: Read> Read for LimitedReader<'a, R> {
         } else {
             buf
         };
-        let result = self.reader.read(local_buf);
+        let mut reader = self.reader.borrow_mut();
+        let result = reader.read(local_buf);
 
         if let Ok(v) = result {
             self.limit -= v as u64
@@ -33,14 +35,14 @@ impl<'a, R: Read> Read for LimitedReader<'a, R> {
     }
 }
 
-pub struct DelimitedReader<'a, R: Read> {
-    inner: RefMut<'a, R>,
+pub struct DelimitedReader<R: Read> {
+    inner: Rc<RefCell<R>>,
     delim: u8,
     done: bool,
 }
 
-impl<'a, R: Read> DelimitedReader<'a, R> {
-    pub fn new(reader: RefMut<'a, R>, delimiter: u8) -> Self {
+impl<R: Read> DelimitedReader<R> {
+    pub fn new(reader: Rc<RefCell<R>>, delimiter: u8) -> Self {
         DelimitedReader {
             inner: reader,
             delim: delimiter,
@@ -49,7 +51,7 @@ impl<'a, R: Read> DelimitedReader<'a, R> {
     }
 }
 
-impl<'a, R: Read> Read for DelimitedReader<'a, R> {
+impl<R: Read> Read for DelimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.done {
             return Ok(0);
@@ -57,22 +59,45 @@ impl<'a, R: Read> Read for DelimitedReader<'a, R> {
         let mut local_buf: [u8; 1] = [0];
         let mut total_bytes_read = 0;
 
-        for x in buf {
-            let bytes_read = self.inner.read(&mut local_buf)?;
+        let mut reader = self.inner.borrow_mut();
 
-            if bytes_read > 0 {
-                if local_buf[0] == self.delim {
-                    self.done = true;
-                    return Ok(total_bytes_read);
-                } else {
-                    *x = local_buf[0];
-                }
-            } else {
+        for x in buf {
+            let bytes_read = reader.read(&mut local_buf)?;
+
+            if bytes_read < 1 {
                 break;
             }
+            *x = local_buf[0];
             total_bytes_read += bytes_read;
+
+            if local_buf[0] == self.delim {
+                self.done = true;
+                break;
+            }
         }
         Ok(total_bytes_read)
+    }
+}
+
+pub struct BiReader<R1: Read, R2: Read> {
+    first: R1,
+    second: R2,
+}
+
+impl<R1: Read, R2: Read> BiReader<R1, R2> {
+    pub fn new(first: R1, second: R2) -> Self {
+        BiReader { first, second }
+    }
+}
+
+impl<R1: Read, R2: Read> Read for BiReader<R1, R2> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let first_bytes_read = self.first.read(buf)?;
+
+        if first_bytes_read > 0 {
+            return Ok(first_bytes_read);
+        }
+        self.second.read(buf)
     }
 }
 
@@ -86,23 +111,22 @@ mod test {
     #[test]
     fn delimited_reader_middle() {
         let input = b"this is; a test";
-        let cell = RefCell::new(Cursor::new(input));
-        let reader = cell.borrow_mut();
-        let mut dreader = DelimitedReader::new(reader, b';');
+        let cell = Rc::new(RefCell::new(Cursor::new(input)));
+
+        let mut dreader = DelimitedReader::new(cell.clone(), b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
-        let target = "this is";
+        let target = "this is;";
         assert_eq!(target, output)
     }
 
     #[test]
     fn delimited_reader_none() {
         let input = b"this is a test";
-        let cell = RefCell::new(Cursor::new(input));
-        let reader = cell.borrow_mut();
+        let cell = Rc::new(RefCell::new(Cursor::new(input)));
 
-        let mut dreader = DelimitedReader::new(reader, b';');
+        let mut dreader = DelimitedReader::new(cell.clone(), b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
@@ -113,14 +137,29 @@ mod test {
     #[test]
     fn delimited_reader_beginning() {
         let input = b";this is a test";
-        let cell = RefCell::new(Cursor::new(input));
-        let reader = cell.borrow_mut();
+        let cell = Rc::new(RefCell::new(Cursor::new(input)));
 
-        let mut dreader = DelimitedReader::new(reader, b';');
+        let mut dreader = DelimitedReader::new(cell.clone(), b';');
         let mut buffer: Vec<u8> = Vec::new();
         Read::read_to_end(&mut dreader, &mut buffer).unwrap();
         let output = str::from_utf8(&buffer).unwrap();
-        let target = "";
+        let target = ";";
+        assert_eq!(target, output)
+    }
+
+    #[test]
+    fn bi_reader_read() {
+        let input = b"this is a test; that already ended";
+        let cell = Rc::new(RefCell::new(Cursor::new(input)));
+
+        let limited_reader = LimitedReader::new(cell.clone(), 3);
+        let delimited_reader = DelimitedReader::new(cell.clone(), b';');
+        let mut bi_reader = BiReader::new(limited_reader, delimited_reader);
+
+        let mut buffer: Vec<u8> = Vec::new();
+        Read::read_to_end(&mut bi_reader, &mut buffer).unwrap();
+        let output = str::from_utf8(&buffer).unwrap();
+        let target = "this is a test;";
         assert_eq!(target, output)
     }
 }
