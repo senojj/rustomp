@@ -5,7 +5,7 @@ mod string;
 use crate::frame::io::{BiReader, LimitedReader};
 use error::ReadError;
 use io::DelimitedReader;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io as stdio;
@@ -16,10 +16,52 @@ use std::rc::Rc;
 use std::str;
 use std::str::FromStr;
 
+type LockFlag = isize;
+const UNUSED: LockFlag = 0;
+
 const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 const NULL: u8 = b'\0';
 const EOL: u8 = b'\n';
+
+struct Guard<'a> {
+    value: &'a Cell<LockFlag>,
+}
+
+impl<'a> Guard<'a> {
+    fn new(value: &'a Cell<LockFlag>) -> Option<Guard<'a>> {
+        match value.get() {
+            UNUSED => {
+                value.set(UNUSED + 1);
+                Some(Guard { value })
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<'a> Drop for Guard<'a> {
+    fn drop(&mut self) {
+        let value = self.value.get();
+        self.value.set(value - 1)
+    }
+}
+
+struct Gate {
+    latch: Cell<LockFlag>,
+}
+
+impl Gate {
+    fn new() -> Self {
+        Self {
+            latch: Cell::new(UNUSED),
+        }
+    }
+
+    fn latch(&self) -> Guard<'_> {
+        Guard::new(&self.latch).expect("gate is latched")
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -328,6 +370,22 @@ impl<R: Read> FrameReader<R> {
 mod test {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    #[should_panic]
+    fn gate() {
+        let gate = Gate::new();
+        let _guard = gate.latch();
+        gate.latch();
+    }
+
+    #[test]
+    fn gate_proper() {
+        let gate = Gate::new();
+        let guard = gate.latch();
+        drop(guard);
+        gate.latch();
+    }
 
     #[test]
     fn read_header() {
