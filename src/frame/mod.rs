@@ -7,7 +7,9 @@ use error::ReadError;
 use io::DelimitedReader;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::io as stdio;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::io::{Read, Write};
@@ -23,6 +25,17 @@ const MAX_COMMAND_SIZE: u64 = 1024;
 const MAX_HEADER_SIZE: u64 = 1024 * 1000;
 const NULL: u8 = b'\0';
 const EOL: u8 = b'\n';
+
+#[derive(Debug, Clone)]
+pub struct LatchError;
+
+impl Display for LatchError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "latch already locked")
+    }
+}
+
+impl Error for LatchError {}
 
 struct Guard<'a> {
     value: &'a Cell<LockFlag>,
@@ -60,6 +73,13 @@ impl Gate {
 
     fn latch(&self) -> Guard<'_> {
         Guard::new(&self.latch).expect("gate is latched")
+    }
+
+    fn try_latch(&self) -> Result<Guard<'_>, LatchError> {
+        match Guard::new(&self.latch) {
+            Some(g) => Ok(g),
+            None => Err(LatchError),
+        }
     }
 }
 
@@ -275,22 +295,25 @@ pub struct Frame<'a> {
     pub command: Command,
     pub header: Header,
     pub body: Body<'a>,
+    _guard: Guard<'a>,
 }
 
 impl<'a> Frame<'a> {
-    pub fn new(command: Command, body: Body<'a>) -> Self {
+    fn new(command: Command, body: Body<'a>, guard: Guard<'a>) -> Self {
         Frame {
             command,
             header: Header::new(),
             body,
+            _guard: guard,
         }
     }
 
-    fn with_header(command: Command, header: Header, body: Body<'a>) -> Self {
+    fn with_header(command: Command, header: Header, body: Body<'a>, guard: Guard<'a>) -> Self {
         Frame {
             command,
             header,
             body,
+            _guard: guard,
         }
     }
 
@@ -333,16 +356,19 @@ impl<'a> Drop for Frame<'a> {
 
 pub struct FrameReader<R: Read> {
     reader: Rc<RefCell<BufReader<R>>>,
+    gate: Gate,
 }
 
 impl<R: Read> FrameReader<R> {
     pub fn new(reader: R) -> FrameReader<R> {
         FrameReader {
             reader: Rc::new(RefCell::new(BufReader::new(reader))),
+            gate: Gate::new(),
         }
     }
 
     pub fn read_frame(&'static self) -> Result<Frame, ReadError> {
+        let guard = self.gate.try_latch()?;
         let mut reader = self.reader.try_borrow_mut()?;
         let command = Frame::read_command(reader.deref_mut())?;
         let header = Header::read_from(reader.deref_mut())?;
@@ -360,7 +386,7 @@ impl<R: Read> FrameReader<R> {
             body
         };
 
-        let frame = Frame::with_header(command, header, body.build());
+        let frame = Frame::with_header(command, header, body.build(), guard);
 
         Ok(frame)
     }
@@ -436,7 +462,10 @@ mod test {
         let ref_input = Rc::new(RefCell::new(input));
         let mut body = BodyBuilder::new(ref_input);
         body = body.content_length(30);
-        let mut frame = Frame::new(Command::Connect, body.build());
+
+        let gate = Gate::new();
+        let guard = gate.latch();
+        let mut frame = Frame::new(Command::Connect, body.build(), guard);
         frame.header.add_field("Content-Type", "application/json");
         frame.header.add_field("Content-Length", "30");
 
@@ -453,7 +482,10 @@ mod test {
         let ref_input = Rc::new(RefCell::new(input));
         let mut body = BodyBuilder::new(ref_input);
         body = body.content_length(30);
-        let mut frame = Frame::new(Command::Connect, body.build());
+
+        let gate = Gate::new();
+        let guard = gate.latch();
+        let mut frame = Frame::new(Command::Connect, body.build(), guard);
         frame.header.add_field("Content-Type", "application/json");
         frame.header.add_field("Content-Length", "30");
 
