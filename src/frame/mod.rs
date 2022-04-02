@@ -5,6 +5,7 @@ mod string;
 use crate::frame::io::{BiReader, LimitedReader};
 use error::ReadError;
 use io::DelimitedReader;
+use std::borrow::BorrowMut;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -13,7 +14,7 @@ use std::fmt::{Display, Formatter};
 use std::io as stdio;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::io::{Read, Write};
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str;
 use std::str::FromStr;
@@ -156,46 +157,37 @@ impl FromStr for Command {
 }
 
 #[derive(Default, PartialEq, Debug)]
-pub struct Header {
-    fields: BTreeMap<String, Vec<String>>,
+pub struct Header(BTreeMap<String, Vec<String>>);
+
+impl Deref for Header {
+    type Target = BTreeMap<String, Vec<String>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Header {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.borrow_mut()
+    }
 }
 
 impl Header {
     pub fn new() -> Self {
-        Header {
-            fields: BTreeMap::new(),
-        }
+        Header(BTreeMap::new())
     }
 
-    pub fn get_field(&self, key: &str) -> Option<&Vec<String>> {
-        self.fields.get(key)
-    }
-
-    pub fn add_field<T: Into<String>>(&mut self, key: T, value: T) {
-        self.fields
-            .entry(key.into())
+    pub fn push<T: Into<String>>(&mut self, key: T, value: String) {
+        self.entry(key.into())
             .or_insert_with(|| Vec::with_capacity(1))
-            .push(value.into());
-    }
-
-    pub fn set_field<T: Into<String>>(&mut self, key: T, values: Vec<String>) {
-        let mut c = Vec::with_capacity(values.len());
-
-        for v in values {
-            c.push(v);
-        }
-
-        self.fields.insert(key.into(), c);
-    }
-
-    pub fn remove_field(&mut self, key: &str) {
-        self.fields.remove(key);
+            .push(value)
     }
 
     pub fn write_to<W: Write>(&self, mut w: W) -> stdio::Result<u64> {
         let mut bytes_written: u64 = 0;
 
-        for (k, v) in self.fields.iter() {
+        for (k, v) in self.0.iter() {
             let field_str = format!("{}: {}\n", string::encode(k), string::encode(&v.join(",")));
             let size = w.write(field_str.as_bytes())?;
             bytes_written += size as u64;
@@ -238,7 +230,10 @@ impl Header {
             if clean_field_name.is_empty() {
                 return Err("empty header field name".into());
             }
-            header.add_field(clean_field_name, clean_field_value);
+            header
+                .entry(clean_field_name)
+                .or_insert_with(|| Vec::with_capacity(1))
+                .push(clean_field_value);
         }
         Ok(header)
     }
@@ -374,7 +369,7 @@ impl<R: Read> FrameReader<R> {
         let header = Header::read_from(reader.deref_mut())?;
 
         let clen = header
-            .get_field("content-length")
+            .get("content-length")
             .map(|v| v.first())
             .unwrap_or(None);
 
@@ -421,9 +416,9 @@ mod test {
         let header = Header::read_from(&mut buf_reader).unwrap();
 
         let mut target = Header::new();
-        target.add_field("content-type", "application/json");
-        target.add_field("content-length", "30");
-        target.add_field("name", "Joshua");
+        target.push("content-type", "application/json".to_owned());
+        target.push("content-length", "30".to_owned());
+        target.push("name", "Joshua".to_owned());
         assert_eq!(target, header);
     }
 
@@ -432,8 +427,8 @@ mod test {
         let target = "Content-Length: 30\nContent-Type: application/json\n";
 
         let mut header = Header::new();
-        header.add_field("Content-Type", "application/json");
-        header.add_field("Content-Length", "30");
+        header.push("Content-Type", "application/json".to_owned());
+        header.push("Content-Length", "30".to_owned());
 
         let mut buffer: Vec<u8> = Vec::new();
         header.write_to(&mut buffer).unwrap();
@@ -446,8 +441,8 @@ mod test {
         let target = "Content-Length: 30\nContent-Type: vnd\\capplication/json\n";
 
         let mut header = Header::new();
-        header.add_field("Content-Type", "vnd:application/json");
-        header.add_field("Content-Length", "30");
+        header.push("Content-Type", "vnd:application/json".to_owned());
+        header.push("Content-Length", "30".to_owned());
 
         let mut buffer: Vec<u8> = Vec::new();
         header.write_to(&mut buffer).unwrap();
@@ -466,8 +461,10 @@ mod test {
         let gate = Gate::new();
         let guard = gate.latch();
         let mut frame = Frame::new(Command::Connect, body.build(), guard);
-        frame.header.add_field("Content-Type", "application/json");
-        frame.header.add_field("Content-Length", "30");
+        frame
+            .header
+            .push("Content-Type", "application/json".to_owned());
+        frame.header.push("Content-Length", "30".to_owned());
 
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
@@ -486,8 +483,10 @@ mod test {
         let gate = Gate::new();
         let guard = gate.latch();
         let mut frame = Frame::new(Command::Connect, body.build(), guard);
-        frame.header.add_field("Content-Type", "application/json");
-        frame.header.add_field("Content-Length", "30");
+        frame
+            .header
+            .push("Content-Type", "application/json".to_owned());
+        frame.header.push("Content-Length", "30".to_owned());
 
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
