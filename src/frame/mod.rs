@@ -230,10 +230,7 @@ impl Header {
             if clean_field_name.is_empty() {
                 return Err("empty header field name".into());
             }
-            header
-                .entry(clean_field_name)
-                .or_insert_with(|| Vec::with_capacity(1))
-                .push(clean_field_value);
+            header.push(clean_field_name, clean_field_value);
         }
         Ok(header)
     }
