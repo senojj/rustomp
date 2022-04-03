@@ -287,25 +287,25 @@ pub struct Frame<'a> {
     pub command: Command,
     pub header: Header,
     pub body: Body<'a>,
-    _guard: Guard<'a>,
+    _guard: Option<Guard<'a>>,
 }
 
 impl<'a> Frame<'a> {
-    fn new(command: Command, body: Body<'a>, guard: Guard<'a>) -> Self {
-        Frame {
-            command,
-            header: Header::new(),
-            body,
-            _guard: guard,
-        }
-    }
-
-    fn with_header(command: Command, header: Header, body: Body<'a>, guard: Guard<'a>) -> Self {
+    pub fn new(command: Command, header: Header, body: Body<'a>) -> Self {
         Frame {
             command,
             header,
             body,
-            _guard: guard,
+            _guard: None,
+        }
+    }
+
+    fn with_guard(command: Command, header: Header, body: Body<'a>, guard: Guard<'a>) -> Self {
+        Frame {
+            command,
+            header,
+            body,
+            _guard: Some(guard),
         }
     }
 
@@ -378,7 +378,7 @@ impl<R: Read> FrameReader<R> {
             body
         };
 
-        let frame = Frame::with_header(command, header, body.build(), guard);
+        let frame = Frame::with_guard(command, header, body.build(), guard);
 
         Ok(frame)
     }
@@ -457,12 +457,11 @@ mod test {
 
         let gate = Gate::new();
         let guard = gate.latch();
-        let mut frame = Frame::new(Command::Connect, body.build(), guard);
-        frame
-            .header
-            .push("Content-Type", "application/json".to_owned());
-        frame.header.push("Content-Length", "30".to_owned());
+        let mut header = Header::new();
+        header.push("Content-Type", "application/json".to_owned());
+        header.push("Content-Length", "30".to_owned());
 
+        let mut frame = Frame::with_guard(Command::Connect, header, body.build(), guard);
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
         let data = str::from_utf8(&buffer).unwrap();
@@ -479,12 +478,11 @@ mod test {
 
         let gate = Gate::new();
         let guard = gate.latch();
-        let mut frame = Frame::new(Command::Connect, body.build(), guard);
-        frame
-            .header
-            .push("Content-Type", "application/json".to_owned());
-        frame.header.push("Content-Length", "30".to_owned());
+        let mut header = Header::new();
+        header.push("Content-Type", "application/json".to_owned());
+        header.push("Content-Length", "30".to_owned());
 
+        let mut frame = Frame::with_guard(Command::Connect, header, body.build(), guard);
         let mut buffer: Vec<u8> = Vec::new();
         frame.write_to(&mut buffer).unwrap();
         let data = str::from_utf8(&buffer).unwrap();
