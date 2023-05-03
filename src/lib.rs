@@ -1,4 +1,5 @@
 pub mod frame;
+pub mod protocol;
 
 #[cfg(test)]
 mod tests {
